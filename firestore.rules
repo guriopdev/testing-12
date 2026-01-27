@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -6,7 +7,7 @@ service cloud.firestore {
     }
     
     match /users/{userId} {
-      allow get, create, update: if request.auth != null && request.auth.uid == userId;
+      allow get, create, update: if isSignedIn() && request.auth.uid == userId;
     }
     
     match /rooms/{roomId} {
@@ -16,8 +17,12 @@ service cloud.firestore {
       
       match /participants/{participantId} {
         allow read: if isSignedIn();
-        allow create, update: if isSignedIn() && participantId == request.auth.uid;
-        allow delete: if isSignedIn() && participantId == request.auth.uid;
+        allow create, update, delete: if isSignedIn() && participantId == request.auth.uid;
+      }
+      
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
       }
     }
   }

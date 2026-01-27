@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "User": {
@@ -22,7 +23,8 @@
         "topic": { "type": "string" },
         "creatorId": { "type": "string" },
         "creatorName": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "password": { "type": "string", "description": "Optional password for private entry." }
       },
       "required": ["id", "name", "topic", "creatorId"]
     },
@@ -39,6 +41,19 @@
         "joinedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "name"]
+    },
+    "Message": {
+      "title": "Message",
+      "type": "object",
+      "description": "A chat message within a room.",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "senderId", "senderName"]
     }
   },
   "auth": {
@@ -56,6 +71,10 @@
     "/rooms/{roomId}/participants/{participantId}": {
       "schema": "#/backend/entities/Participant",
       "description": "Active participants in a room."
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": "#/backend/entities/Message",
+      "description": "Real-time chat messages."
     }
   }
 }
