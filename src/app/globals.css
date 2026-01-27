@@ -4,25 +4,25 @@
 
 @layer base {
   :root {
-    --background: 260 30% 2%;
-    --foreground: 260 10% 98%;
-    --card: 260 30% 4%;
-    --card-foreground: 260 10% 98%;
-    --popover: 260 30% 4%;
-    --popover-foreground: 260 10% 98%;
-    --primary: 270 90% 65%;
-    --primary-foreground: 260 30% 2%;
-    --secondary: 260 30% 10%;
-    --secondary-foreground: 260 10% 98%;
-    --muted: 260 30% 10%;
-    --muted-foreground: 260 10% 60%;
+    --background: 270 50% 1%;
+    --foreground: 270 10% 98%;
+    --card: 270 40% 3%;
+    --card-foreground: 270 10% 98%;
+    --popover: 270 40% 3%;
+    --popover-foreground: 270 10% 98%;
+    --primary: 270 100% 70%;
+    --primary-foreground: 270 50% 2%;
+    --secondary: 270 30% 10%;
+    --secondary-foreground: 270 10% 98%;
+    --muted: 270 30% 8%;
+    --muted-foreground: 270 10% 65%;
     --accent: 280 100% 75%;
-    --accent-foreground: 260 30% 2%;
+    --accent-foreground: 270 50% 2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 260 30% 12%;
-    --input: 260 30% 12%;
-    --ring: 270 90% 65%;
+    --border: 270 30% 12%;
+    --input: 270 30% 12%;
+    --ring: 270 100% 70%;
     --radius: 0.75rem;
   }
 }
@@ -34,25 +34,27 @@
   body {
     @apply bg-background text-foreground font-body antialiased;
     background-image: 
-      radial-gradient(at 0% 0%, hsla(270, 90%, 65%, 0.05) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, hsla(280, 100%, 75%, 0.05) 0px, transparent 50%);
+      radial-gradient(at 0% 0%, hsla(270, 100%, 70%, 0.07) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, hsla(280, 100%, 75%, 0.07) 0px, transparent 50%);
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-headline;
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.5s ease-out forwards;
+.mirror {
+  transform: scaleX(-1);
 }
 
-@keyframes fade-in-up {
+.animate-glow {
+  animation: glow 2s infinite alternate;
+}
+
+@keyframes glow {
   from {
-    opacity: 0;
-    transform: translateY(10px);
+    box-shadow: 0 0 10px hsla(270, 100%, 70%, 0.3);
   }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    box-shadow: 0 0 20px hsla(270, 100%, 70%, 0.6);
   }
 }

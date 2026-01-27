@@ -16,6 +16,7 @@ import {
   Lock,
   ChevronRight,
   Trash2,
+  MoreVertical,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -37,7 +38,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { 
@@ -51,6 +52,12 @@ import {
   addDocumentNonBlocking 
 } from '@/firebase';
 import { doc, collection, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: roomId } = use(params);
@@ -59,7 +66,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const { toast } = useToast();
   const router = useRouter();
 
-  // Local UI State
   const [isMuted, setIsMuted] = useState(true);
   const [isCameraOff, setIsCameraOff] = useState(true);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -70,7 +76,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Firestore Data
   const roomRef = useMemoFirebase(() => doc(db, 'rooms', roomId), [db, roomId]);
   const { data: room, isLoading: isRoomLoading } = useDoc(roomRef);
 
@@ -83,7 +88,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   ), [db, roomId]);
   const { data: messages } = useCollection(messagesQuery);
 
-  // Participant Presence Management
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked)) return;
 
@@ -102,7 +106,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
 
-  // Camera/Mic Hardware Initialization
   useEffect(() => {
     if (room?.password && !isUnlocked) return;
 
@@ -119,6 +122,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       } catch (error) {
         console.error('Error accessing media:', error);
         setHasCameraPermission(false);
+        toast({
+          variant: 'destructive',
+          title: 'Media Access Denied',
+          description: 'Please enable camera and microphone permissions.',
+        });
       }
     };
 
@@ -129,7 +137,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [room?.password, isUnlocked]);
 
-  // Auto-scroll chat
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -174,15 +181,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       toast({
         variant: 'destructive',
         title: 'Incorrect Password',
-        description: 'The password you entered is incorrect. Please try again.',
+        description: 'Please try again.',
       });
     }
   };
 
   const handleDeleteRoom = () => {
     if (!room || !user || room.creatorId !== user.uid) return;
-    
-    if (confirm('Are you sure you want to end this session and delete the room?')) {
+    if (confirm('Are you sure you want to end this session for everyone?')) {
       deleteDocumentNonBlocking(roomRef);
       router.push('/dashboard');
     }
@@ -190,7 +196,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   if (isRoomLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-black">
+      <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     );
@@ -198,42 +204,40 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   if (!room) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-black text-center p-4">
-        <h2 className="text-3xl font-headline font-bold mb-4 text-white">Room Not Found</h2>
-        <p className="text-muted-foreground mb-8 text-primary/60">This room may have been deleted or the link is invalid.</p>
-        <Button asChild className="bg-primary hover:bg-primary/80"><Link href="/dashboard">Return to Dashboard</Link></Button>
+      <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
+        <h2 className="text-3xl font-headline font-bold mb-4">Room Closed</h2>
+        <p className="text-muted-foreground mb-8">This session has ended.</p>
+        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
       </div>
     );
   }
 
-  // Password Protection Gate
   if (room.password && !isUnlocked) {
     return (
-      <div className="flex h-screen items-center justify-center bg-black p-4 relative overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[100px] rounded-full" />
-        <Card className="w-full max-w-md bg-black/60 backdrop-blur-2xl border-primary/20 p-8 shadow-2xl relative z-10">
+      <div className="flex h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 blur-[120px] rounded-full" />
+        <Card className="w-full max-w-md bg-card/60 backdrop-blur-3xl border-primary/20 p-8 shadow-2xl relative z-10">
           <div className="text-center space-y-4 mb-8">
-            <div className="h-16 w-16 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto ring-1 ring-primary/40">
+            <div className="h-16 w-16 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto ring-1 ring-primary/30">
               <Lock className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl font-bold font-headline text-white">{room.name}</h1>
-            <p className="text-primary/60">This room is private. Enter the password to join the session.</p>
+            <h1 className="text-3xl font-bold font-headline">{room.name}</h1>
+            <p className="text-muted-foreground">This session is password protected.</p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <Input 
               type="password" 
-              placeholder="Room Password" 
+              placeholder="Enter Password" 
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              className="h-12 bg-black/50 border-white/10 text-lg text-center tracking-widest focus:border-primary/50 text-white"
+              className="h-12 bg-background/50 border-primary/20 text-center tracking-widest text-lg"
               autoFocus
             />
-            <Button type="submit" className="w-full h-12 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20">
-              Enter Room
-              <ChevronRight className="ml-2 h-5 w-5" />
+            <Button type="submit" className="w-full h-12 text-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity">
+              Join Session
             </Button>
-            <Button asChild variant="ghost" className="w-full text-primary/60 hover:text-white hover:bg-white/5">
-              <Link href="/dashboard">Cancel and Go Back</Link>
+            <Button asChild variant="ghost" className="w-full text-muted-foreground">
+              <Link href="/dashboard">Cancel</Link>
             </Button>
           </form>
         </Card>
@@ -245,103 +249,84 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   return (
     <TooltipProvider>
-    <div className="flex h-screen w-full flex-col bg-black font-body text-white overflow-hidden">
+    <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
       {/* Header */}
-      <header className="flex h-16 items-center justify-between border-b border-white/5 bg-black/60 backdrop-blur-xl px-4 md:px-6 flex-shrink-0 z-20">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg md:text-xl font-bold font-headline truncate max-w-[150px] sm:max-w-md text-white">{room.name}</h1>
-          <Badge variant="secondary" className="hidden sm:flex bg-primary/20 text-primary border-primary/30 font-medium">
-            {room.topic}
-          </Badge>
-          {room.password && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
-              <Lock className="h-3 w-3 text-primary" />
-              <span className="text-[10px] uppercase tracking-widest font-bold text-primary">Private</span>
-            </div>
-          )}
+      <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard" className="hidden sm:block">
+             <ChevronRight className="h-5 w-5 text-muted-foreground rotate-180 hover:text-primary transition-colors cursor-pointer" />
+          </Link>
+          <div className="flex flex-col">
+            <h1 className="text-sm md:text-base font-bold font-headline truncate max-w-[120px] sm:max-w-md">{room.name}</h1>
+            <span className="text-[10px] text-primary font-bold uppercase tracking-widest leading-none">{room.topic}</span>
+          </div>
         </div>
+        
         <div className="flex items-center gap-2">
           {isCreator && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="hidden sm:flex rounded-full border-destructive/20 text-destructive hover:bg-destructive hover:text-white"
-              onClick={handleDeleteRoom}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Close Room
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-card border-primary/20">
+                <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive cursor-pointer">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Close Room Forever
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          <Button asChild variant="destructive" size="sm" className="rounded-full px-4 font-semibold shadow-lg shadow-destructive/20 hover:scale-105 transition-transform">
+          <Button asChild variant="destructive" size="sm" className="rounded-full px-4 shadow-lg shadow-destructive/20 hover:scale-105 transition-transform">
             <Link href="/dashboard">
               <PhoneOff className="mr-2 h-4 w-4" />
-              Leave
+              <span className="hidden sm:inline">Leave</span>
             </Link>
           </Button>
         </div>
       </header>
 
-      {/* Main Layout: Video + Sidebar Chat */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Video Grid */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent">
+      <div className="flex flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="mx-auto max-w-7xl grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 content-start">
-            
             {/* My Video Feed */}
-            <div className="relative aspect-video overflow-hidden rounded-2xl bg-black/40 border border-white/10 shadow-2xl group">
+            <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-xl group">
               <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
               
-              { hasCameraPermission === false && (
-                <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                  <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 max-w-xs">
-                    <AlertTitle className="text-sm font-bold">Permissions Required</AlertTitle>
-                    <AlertDescription className="text-xs opacity-80">Please check your browser settings to allow access to camera and microphone.</AlertDescription>
-                  </Alert>
-                </div>
-              )}
-
               {isCameraOff && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/20 to-black">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-black shadow-2xl ring-4 ring-primary/30">
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-background">
+                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-2xl ring-4 ring-primary/20">
                     <AvatarImage src={user?.photoURL || ''} />
-                    <AvatarFallback className="text-4xl bg-primary text-black font-headline">{user?.displayName?.charAt(0) || '?'}</AvatarFallback>
+                    <AvatarFallback className="text-4xl bg-primary text-primary-foreground font-headline">
+                      {user?.displayName?.charAt(0) || '?'}
+                    </AvatarFallback>
                   </Avatar>
                 </div>
               )}
 
-              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/80 backdrop-blur-md rounded-xl p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-xs font-semibold text-white px-2">You</span>
-                <div className="p-1 rounded-full bg-white/5">
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2">You</span>
+                <div className="flex gap-2">
                   {isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
                 </div>
               </div>
-              {!isCameraOff && (
-                 <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                    <div className="h-2 w-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.8)]" />
-                    <span className="text-[10px] font-bold text-white uppercase tracking-widest drop-shadow-md">Live</span>
-                 </div>
-              )}
             </div>
 
             {/* Other Participants */}
             {participants?.filter(p => p.userId !== user?.uid).map((p) => (
-              <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-black/40 border border-white/10 shadow-xl transition-all hover:scale-[1.02] hover:shadow-primary/20 hover:border-primary/30">
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-black to-primary/10">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-black shadow-xl ring-2 ring-white/5">
+              <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/30">
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/5">
+                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl">
                     <AvatarImage src={p.photoUrl} />
                     <AvatarFallback className="text-4xl font-headline bg-primary/20 text-primary">{p.name.charAt(0)}</AvatarFallback>
                   </Avatar>
-                  {!p.isCameraOff && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
-                      <Video className="h-10 w-10 text-primary/40" />
-                    </div>
-                  )}
                 </div>
-
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/80 backdrop-blur-md rounded-xl p-2 border border-white/10">
-                  <span className="text-xs font-semibold text-white px-2 truncate">{p.name}</span>
-                  <div className="p-1 rounded-full bg-white/5">
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate">{p.name}</span>
+                  <div className="flex gap-2">
                     {p.isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
+                    {p.isCameraOff ? <VideoOff className="h-3 w-3 text-muted-foreground" /> : <Video className="h-3 w-3 text-primary" />}
                   </div>
                 </div>
               </div>
@@ -350,29 +335,22 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </main>
 
         {/* Desktop Sidebar Chat */}
-        <aside className="hidden lg:flex w-80 flex-col border-l border-white/5 bg-black/80 backdrop-blur-3xl">
-          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-primary" />
-              <h2 className="font-headline font-bold text-sm tracking-wider uppercase text-white">Live Chat</h2>
-            </div>
-            <Badge className="bg-primary/20 text-primary text-[10px] font-bold border-primary/30">{messages?.length || 0}</Badge>
+        <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl">
+          <div className="p-4 border-b border-primary/10 flex items-center justify-between">
+            <h2 className="font-headline font-bold text-xs tracking-widest uppercase text-primary">Live Chat</h2>
+            <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{messages?.length || 0}</Badge>
           </div>
           
           <ScrollArea className="flex-1 p-4">
             <div className="flex flex-col gap-4">
               {messages?.map((msg) => (
                 <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-bold text-primary/60 uppercase tracking-tighter">
-                      {msg.senderName}
-                    </span>
-                  </div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
                   <div className={cn(
-                    "px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words shadow-sm",
+                    "px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words shadow-sm",
                     msg.senderId === user?.uid 
-                      ? "bg-primary text-black font-medium rounded-tr-none" 
-                      : "bg-white/5 border border-white/10 text-white rounded-tl-none"
+                      ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
+                      : "bg-secondary text-foreground border border-primary/5 rounded-tl-none"
                   )}>
                     {msg.text}
                   </div>
@@ -382,21 +360,15 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </div>
           </ScrollArea>
 
-          <div className="p-4 border-t border-white/5 bg-black/40">
+          <div className="p-4 border-t border-primary/10">
             <form onSubmit={handleSendMessage} className="relative">
               <Input 
-                placeholder="Message group..." 
+                placeholder="Send a message..." 
                 value={chatMessage}
                 onChange={(e) => setChatMessage(e.target.value)}
-                className="pr-12 bg-black/50 border-white/10 focus:border-primary/60 h-10 rounded-xl text-white placeholder:text-primary/30"
+                className="pr-12 bg-background border-primary/20 focus:border-primary rounded-xl h-10"
               />
-              <Button 
-                type="submit" 
-                size="icon" 
-                variant="ghost" 
-                className="absolute right-1 top-1 h-8 w-8 text-primary hover:text-white hover:bg-primary/20 transition-colors"
-                disabled={!chatMessage.trim()}
-              >
+              <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-8 w-8 text-primary hover:text-primary/80" disabled={!chatMessage.trim()}>
                 <Send className="h-4 w-4" />
               </Button>
             </form>
@@ -405,66 +377,66 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       </div>
 
       {/* Controls Footer */}
-      <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-white/5 bg-black/90 backdrop-blur-2xl px-4 z-20">
-        <div className="flex items-center gap-4 px-6 py-3 bg-white/5 rounded-3xl border border-white/10 shadow-2xl">
+      <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40">
+        <div className="flex items-center gap-4 px-6 py-3 bg-background/50 rounded-full border border-primary/10 shadow-2xl">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button 
                 variant={isMuted ? 'destructive' : 'secondary'} 
-                size="lg" 
+                size="icon" 
                 className={cn(
-                  "rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105",
-                  !isMuted && "bg-primary text-black hover:bg-primary/80"
+                  "rounded-full h-12 w-12 transition-all hover:scale-110",
+                  !isMuted && "bg-primary text-primary-foreground hover:bg-primary/90"
                 )} 
                 onClick={handleMuteToggle}
               >
-                {isMuted ? <MicOff className="h-5 w-5 sm:h-6 sm:w-6" /> : <Mic className="h-5 w-5 sm:h-6 sm:w-6" />}
+                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent className="bg-black text-white border-primary/20"><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
+            <TooltipContent><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
           </Tooltip>
           
           <Tooltip>
             <TooltipTrigger asChild>
               <Button 
                 variant={isCameraOff ? 'destructive' : 'secondary'} 
-                size="lg" 
+                size="icon" 
                 className={cn(
-                  "rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105",
-                  !isCameraOff && "bg-primary text-black hover:bg-primary/80"
+                  "rounded-full h-12 w-12 transition-all hover:scale-110",
+                  !isCameraOff && "bg-primary text-primary-foreground hover:bg-primary/90"
                 )} 
                 onClick={handleCameraToggle}
               >
-                {isCameraOff ? <VideoOff className="h-5 w-5 sm:h-6 sm:w-6" /> : <Video className="h-5 w-5 sm:h-6 sm:w-6" />}
+                {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent className="bg-black text-white border-primary/20"><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
+            <TooltipContent><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="h-8 bg-white/10" />
+          <Separator orientation="vertical" className="h-8 bg-primary/10 mx-2" />
 
           {/* Chat for Mobile (Sheet) */}
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105 lg:hidden bg-white/10 text-white hover:bg-primary/20">
-                <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 lg:hidden hover:text-primary transition-colors">
+                <MessageSquare className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-sm bg-black/95 backdrop-blur-2xl border-l border-primary/20 p-0 flex flex-col text-white" side="right">
-              <SheetHeader className="p-4 border-b border-white/5">
-                <SheetTitle className="font-headline text-xl flex items-center gap-3 text-white">
+            <SheetContent className="w-full sm:max-w-sm bg-card/95 border-l border-primary/20 p-0 flex flex-col" side="right">
+              <SheetHeader className="p-4 border-b border-primary/10">
+                <SheetTitle className="font-headline flex items-center gap-2">
                   <MessageSquare className="h-5 w-5 text-primary" />
-                  Study Chat
+                  Room Chat
                 </SheetTitle>
               </SheetHeader>
               <ScrollArea className="flex-1 p-4">
                 <div className="flex flex-col gap-4">
                   {messages?.map((msg) => (
                     <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                      <span className="text-[10px] font-bold text-primary/60 uppercase tracking-tighter">{msg.senderName}</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
                       <div className={cn(
-                        "px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words",
-                        msg.senderId === user?.uid ? "bg-primary text-black font-medium" : "bg-white/5 border border-white/10 text-white"
+                        "px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words shadow-sm",
+                        msg.senderId === user?.uid ? "bg-primary text-primary-foreground font-medium" : "bg-secondary text-foreground"
                       )}>
                         {msg.text}
                       </div>
@@ -473,13 +445,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <div ref={scrollRef} />
                 </div>
               </ScrollArea>
-              <div className="p-4 border-t border-white/5 bg-black/60">
+              <div className="p-4 border-t border-primary/10 bg-background/50">
                 <form onSubmit={handleSendMessage} className="relative">
                   <Input 
                     placeholder="Type a message..." 
                     value={chatMessage}
                     onChange={(e) => setChatMessage(e.target.value)}
-                    className="pr-12 bg-black/50 border-white/10 h-12 rounded-xl text-white"
+                    className="pr-12 h-12 rounded-xl border-primary/20"
                   />
                   <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-10 w-10 text-primary">
                     <Send className="h-5 w-5" />
@@ -489,36 +461,35 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </SheetContent>
           </Sheet>
 
+          {/* Participants Sheet */}
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105 bg-white/10 text-white hover:bg-primary/20">
-                <Users className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 hover:text-primary transition-colors">
+                <Users className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-sm bg-black/95 backdrop-blur-2xl border-l border-primary/20 text-white" side="right">
-              <SheetHeader className="pb-4">
-                <SheetTitle className="font-headline text-2xl flex items-center gap-3 text-white">
+            <SheetContent className="w-full sm:max-w-sm bg-card/95 border-l border-primary/20" side="right">
+              <SheetHeader className="pb-6">
+                <SheetTitle className="font-headline text-2xl flex items-center gap-2">
                   <Users className="h-6 w-6 text-primary" />
-                  Study Group ({participants?.length || 0})
+                  Participants ({participants?.length || 0})
                 </SheetTitle>
               </SheetHeader>
-              <Separator className="bg-white/10 mb-6" />
               <div className="flex flex-col gap-3">
                 {participants?.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-primary/10 transition-colors">
+                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-primary/5">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10 border border-primary/30">
+                      <Avatar className="h-10 w-10 border border-primary/20">
                         <AvatarImage src={p.photoUrl} />
-                        <AvatarFallback className="bg-primary/20 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
+                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col">
-                        <span className="font-semibold text-sm text-white">{p.name}</span>
-                        {p.userId === user?.uid && <span className="text-[10px] uppercase tracking-wider text-primary font-bold leading-none mt-0.5">You</span>}
+                        <span className="font-semibold text-sm">{p.name}</span>
+                        {p.userId === user?.uid && <span className="text-[10px] uppercase font-bold text-primary">You</span>}
                       </div>
                     </div>
-                    <div className="flex gap-2 text-primary/40">
-                      {p.isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4 text-primary" />}
-                      {p.isCameraOff ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4 text-primary" />}
+                    <div className="flex gap-2 opacity-60">
+                      {p.isMuted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4 text-primary" />}
                     </div>
                   </div>
                 ))}
@@ -527,11 +498,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </Sheet>
         </div>
       </footer>
-      <style jsx global>{`
-        .mirror {
-          transform: scaleX(-1);
-        }
-      `}</style>
     </div>
     </TooltipProvider>
   );
