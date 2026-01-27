@@ -67,8 +67,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const { toast } = useToast();
   const router = useRouter();
 
-  const [isMuted, setIsMuted] = useState(true);
-  const [isCameraOff, setIsCameraOff] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | undefined>(undefined);
   const [passwordInput, setPasswordInput] = useState('');
@@ -118,6 +118,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         if (videoRef.current) {
           videoRef.current.srcObject = userStream;
         }
+        // Initialize tracks based on current state
         userStream.getVideoTracks().forEach((track) => (track.enabled = !isCameraOff));
         userStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
       } catch (error) {
@@ -254,7 +255,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       {/* Header */}
       <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="hidden sm:block">
+          <Link href="/dashboard">
              <ChevronRight className="h-5 w-5 text-muted-foreground rotate-180 hover:text-primary transition-colors cursor-pointer" />
           </Link>
           <div className="flex flex-col">

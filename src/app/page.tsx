@@ -29,11 +29,18 @@ export default function Home() {
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      console.error('Sign in error:', error);
-      
+      // Handle the specific case where user closes the popup
+      if (error.code === 'auth/popup-closed-by-user') {
+        toast({
+          title: 'Sign In Cancelled',
+          description: 'The sign-in popup was closed before completion.',
+        });
+        return;
+      }
+
       let message = 'Could not complete sign in. Please try again.';
       if (error.code === 'auth/operation-not-allowed') {
-        message = 'Google sign-in is not enabled in Firebase Console. Please follow instructions provided to enable it.';
+        message = 'Google sign-in is not enabled in Firebase Console. Please enable it in Authentication > Sign-in method.';
       } else if (error.code === 'auth/popup-blocked') {
         message = 'Popup was blocked by your browser. Please allow popups for this site.';
       }
