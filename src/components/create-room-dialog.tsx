@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -109,7 +108,7 @@ export function CreateRoomDialog() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password" (text-sm font-semibold text-foreground/80 flex items-center gap-2)>
+              <Label htmlFor="password" className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
                 <Lock className="h-3 w-3 text-primary" />
                 Password (Optional)
               </Label>
