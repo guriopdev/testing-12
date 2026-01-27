@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -6,31 +7,53 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Users, BookOpen, Loader2, Plus, Lock } from 'lucide-react';
 import { useCollection, useFirestore, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
+import { Badge } from '@/components/ui/badge';
 
 function RoomCard({ room }: { room: any }) {
+  const db = useFirestore();
+  const participantsQuery = useMemoFirebase(() => collection(db, 'rooms', room.id, 'participants'), [db, room.id]);
+  const { data: participants } = useCollection(participantsQuery);
+  
+  const currentCount = participants?.length || 0;
+  const maxCount = room.maxParticipants || 10;
+  const isFull = currentCount >= maxCount;
+
   return (
     <Card className="flex flex-col border-primary/10 bg-card/40 backdrop-blur-sm transition-all hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1">
       <CardHeader>
-        <div className="flex items-start justify-between">
-          <CardTitle className="font-headline tracking-tight text-xl text-foreground">{room.name}</CardTitle>
-          {room.password && <Lock className="h-4 w-4 text-primary mt-1" />}
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="font-headline tracking-tight text-xl text-foreground truncate">{room.name}</CardTitle>
+          <div className="flex gap-1 shrink-0">
+            {room.password && <Lock className="h-4 w-4 text-primary" />}
+          </div>
         </div>
         <CardDescription className="flex items-center gap-2 pt-1 font-medium text-primary/80">
             <BookOpen className="h-4 w-4" />
             {room.topic}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-1">
+      <CardContent className="flex-1 space-y-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Users className="h-4 w-4" />
           <span>Created by {room.creatorName || 'Anonymous'}</span>
         </div>
+        
+        <div className="flex items-center justify-between">
+           <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Occupancy</span>
+           <Badge variant={isFull ? "destructive" : "outline"} className="font-mono text-[10px]">
+             {currentCount} / {maxCount}
+           </Badge>
+        </div>
       </CardContent>
       <CardFooter>
-        <Button asChild className="w-full group bg-primary/20 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground">
+        <Button 
+          asChild 
+          disabled={isFull}
+          className="w-full group bg-primary/20 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+        >
           <Link href={`/room/${room.id}`}>
-            {room.password ? 'Join Private Room' : 'Join Room'}
-            <Plus className="ml-2 h-4 w-4 opacity-0 -translate-x-2 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
+            {isFull ? 'Room Full' : (room.password ? 'Join Private Room' : 'Join Room')}
+            {!isFull && <Plus className="ml-2 h-4 w-4 opacity-0 -translate-x-2 transition-all group-hover:opacity-100 group-hover:translate-x-0" />}
           </Link>
         </Button>
       </CardFooter>
@@ -43,7 +66,6 @@ export default function DashboardPage() {
   const db = useFirestore();
 
   const roomsQuery = useMemoFirebase(() => {
-    // Crucial: Only run the query when the user is authenticated to avoid permission errors
     if (!db || !user) return null;
     return query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
   }, [db, user]);

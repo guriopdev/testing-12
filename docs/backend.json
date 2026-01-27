@@ -24,7 +24,8 @@
         "creatorId": { "type": "string" },
         "creatorName": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "password": { "type": "string", "description": "Optional password for private entry." }
+        "password": { "type": "string", "description": "Optional password for private entry." },
+        "maxParticipants": { "type": "number", "default": 10 }
       },
       "required": ["id", "name", "topic", "creatorId"]
     },

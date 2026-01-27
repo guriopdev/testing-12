@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef, use } from 'react';
@@ -100,8 +101,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   ), [db, roomId]);
   const { data: messages } = useCollection(messagesQuery);
 
+  const isFull = participants && room && participants.length >= (room.maxParticipants || 10) && !participants.find(p => p.userId === user?.uid);
+
   useEffect(() => {
-    if (!user || !db || !roomId || (room?.password && !isUnlocked)) return;
+    if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
 
     const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
     setDocumentNonBlocking(participantRef, {
@@ -116,10 +119,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return () => {
       deleteDocumentNonBlocking(participantRef);
     };
-  }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
+  }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked, isFull]);
 
   useEffect(() => {
-    if (room?.password && !isUnlocked) return;
+    if ((room?.password && !isUnlocked) || isFull) return;
 
     const getMediaPermission = async () => {
       try {
@@ -147,7 +150,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return () => {
       stream?.getTracks().forEach(track => track.stop());
     };
-  }, [room?.password, isUnlocked]);
+  }, [room?.password, isUnlocked, isFull]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -223,6 +226,21 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     );
   }
 
+  if (isFull) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
+        <div className="h-20 w-20 bg-destructive/10 rounded-full flex items-center justify-center mb-6">
+          <Users className="h-10 w-10 text-destructive" />
+        </div>
+        <h2 className="text-3xl font-headline font-bold mb-4">Room Full</h2>
+        <p className="text-muted-foreground mb-8 max-w-sm">
+          This session has reached its capacity of {room.maxParticipants} students.
+        </p>
+        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
+      </div>
+    );
+  }
+
   if (room.password && !isUnlocked) {
     return (
       <div className="flex h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
@@ -269,7 +287,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </Link>
           <div className="flex flex-col">
             <h1 className="text-sm md:text-base font-bold font-headline truncate max-w-[120px] sm:max-w-md">{room.name}</h1>
-            <span className="text-[10px] text-primary font-bold uppercase tracking-widest leading-none">{room.topic}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-primary font-bold uppercase tracking-widest leading-none">{room.topic}</span>
+              <Badge variant="outline" className="text-[9px] h-4 border-primary/30 px-1 py-0">{participants?.length}/{room.maxParticipants}</Badge>
+            </div>
           </div>
         </div>
         
@@ -336,8 +357,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
                   <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate">{p.name}</span>
                   <div className="flex gap-2">
-                    {p.isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
-                    {p.isCameraOff ? <VideoOff className="h-3 w-3 text-muted-foreground" /> : <Video className="h-3 w-3 text-primary" />}
+                    {p.isMuted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4 text-primary" />}
+                    {p.isCameraOff ? <VideoOff className="h-4 w-4 text-muted-foreground" /> : <Video className="h-4 w-4 text-primary" />}
                   </div>
                 </div>
               </div>

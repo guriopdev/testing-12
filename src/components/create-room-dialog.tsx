@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PlusCircle, Loader2, Lock } from 'lucide-react';
+import { PlusCircle, Loader2, Lock, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useFirestore, useUser, addDocumentNonBlocking } from '@/firebase';
 import { collection, serverTimestamp } from 'firebase/firestore';
@@ -25,6 +26,7 @@ export function CreateRoomDialog() {
   const [name, setName] = useState('');
   const [topic, setTopic] = useState('');
   const [password, setPassword] = useState('');
+  const [maxParticipants, setMaxParticipants] = useState('10');
   
   const { user } = useUser();
   const db = useFirestore();
@@ -48,6 +50,7 @@ export function CreateRoomDialog() {
         creatorName: user.displayName || 'Anonymous',
         createdAt: serverTimestamp(),
         password: password.trim() || null,
+        maxParticipants: parseInt(maxParticipants) || 10,
       });
       
       if (roomRef) {
@@ -55,6 +58,7 @@ export function CreateRoomDialog() {
         setName('');
         setTopic('');
         setPassword('');
+        setMaxParticipants('10');
         router.push(`/room/${roomRef.id}`);
       }
     } catch (error) {
@@ -77,7 +81,7 @@ export function CreateRoomDialog() {
           <DialogHeader>
             <DialogTitle className="font-headline text-2xl text-foreground">Create Study Room</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Launch a space for collaboration. Set a password to make it private.
+              Launch a space for collaboration. Set a password or limit capacity.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-6 py-6">
@@ -107,19 +111,36 @@ export function CreateRoomDialog() {
                 className="bg-background/50 border-white/10 focus:border-primary/50"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
-                <Lock className="h-3 w-3 text-primary" />
-                Password (Optional)
-              </Label>
-              <Input 
-                id="password" 
-                type="password"
-                placeholder="Leave blank for public access" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-background/50 border-white/10 focus:border-primary/50"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="maxParticipants" className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
+                  <Users className="h-3 w-3 text-primary" />
+                  Max Capacity
+                </Label>
+                <Input 
+                  id="maxParticipants" 
+                  type="number"
+                  min="2"
+                  max="50"
+                  value={maxParticipants}
+                  onChange={(e) => setMaxParticipants(e.target.value)}
+                  className="bg-background/50 border-white/10 focus:border-primary/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
+                  <Lock className="h-3 w-3 text-primary" />
+                  Password
+                </Label>
+                <Input 
+                  id="password" 
+                  type="password"
+                  placeholder="Optional" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="bg-background/50 border-white/10 focus:border-primary/50"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
