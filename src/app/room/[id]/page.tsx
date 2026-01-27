@@ -58,6 +58,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = use(params);
@@ -74,6 +84,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [passwordInput, setPasswordInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -118,7 +129,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         if (videoRef.current) {
           videoRef.current.srcObject = userStream;
         }
-        // Initialize tracks based on current state
         userStream.getVideoTracks().forEach((track) => (track.enabled = !isCameraOff));
         userStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
       } catch (error) {
@@ -188,12 +198,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
-  const handleDeleteRoom = () => {
+  const handleConfirmDelete = () => {
     if (!room || !user || room.creatorId !== user.uid) return;
-    if (confirm('Are you sure you want to end this session for everyone?')) {
-      deleteDocumentNonBlocking(roomRef);
-      router.push('/dashboard');
-    }
+    deleteDocumentNonBlocking(roomRef);
+    setIsDeleteDialogOpen(false);
+    router.push('/dashboard');
   };
 
   if (isRoomLoading) {
@@ -273,7 +282,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="bg-card border-primary/20">
-                <DropdownMenuItem onClick={handleDeleteRoom} className="text-destructive focus:text-destructive cursor-pointer">
+                <DropdownMenuItem onSelect={() => setIsDeleteDialogOpen(true)} className="text-destructive focus:text-destructive cursor-pointer">
                   <Trash2 className="mr-2 h-4 w-4" />
                   Close Room Forever
                 </DropdownMenuItem>
@@ -511,6 +520,23 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </Sheet>
         </div>
       </footer>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-card/95 backdrop-blur-xl border-primary/20">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-headline font-bold">End Session?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              This will permanently close the room and disconnect all participants. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-background/50 border-primary/10 hover:bg-primary/10 hover:text-primary">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:opacity-90">
+              Close Forever
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </TooltipProvider>
   );
