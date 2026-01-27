@@ -1,11 +1,10 @@
-
 'use client';
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, BookOpen, Loader2, Plus, Lock } from 'lucide-react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 
 function RoomCard({ room }: { room: any }) {
@@ -40,12 +39,14 @@ function RoomCard({ room }: { room: any }) {
 }
 
 export default function DashboardPage() {
+  const { user } = useUser();
   const db = useFirestore();
 
   const roomsQuery = useMemoFirebase(() => {
-    if (!db) return null;
+    // Crucial: Only run the query when the user is authenticated to avoid permission errors
+    if (!db || !user) return null;
     return query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
-  }, [db]);
+  }, [db, user]);
 
   const { data: rooms, isLoading } = useCollection(roomsQuery);
 

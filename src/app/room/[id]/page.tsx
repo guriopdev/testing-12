@@ -60,7 +60,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: roomId } = use(params);
+  const unwrappedParams = use(params);
+  const roomId = unwrappedParams.id;
   const db = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
@@ -125,7 +126,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         toast({
           variant: 'destructive',
           title: 'Media Access Denied',
-          description: 'Please enable camera and microphone permissions.',
+          description: 'Please enable camera and microphone permissions in your browser settings.',
         });
       }
     };
@@ -332,6 +333,17 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               </div>
             ))}
           </div>
+          
+          {hasCameraPermission === false && (
+            <div className="mt-8 max-w-md mx-auto">
+              <Alert variant="destructive">
+                <AlertTitle>Camera Access Required</AlertTitle>
+                <AlertDescription>
+                  Please enable camera and microphone permissions in your browser settings to participate in the video session.
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
         </main>
 
         {/* Desktop Sidebar Chat */}
