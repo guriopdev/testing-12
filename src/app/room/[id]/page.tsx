@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -34,12 +34,62 @@ import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function RoomPage({ params }: { params: { id: string } }) {
   const room = mockRooms.find((r) => r.id === params.id) || mockRooms[0];
   const participants = mockParticipants;
+  const { toast } = useToast();
   const [isMuted, setIsMuted] = useState(true);
-  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(true);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | undefined>(undefined);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const getCameraPermission = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        setStream(stream);
+        setHasCameraPermission(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        
+        // Start with camera off and mic muted
+        stream.getVideoTracks().forEach((track) => (track.enabled = false));
+        stream.getAudioTracks().forEach((track) => (track.enabled = false));
+
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        setHasCameraPermission(false);
+        toast({
+          variant: 'destructive',
+          title: 'Camera Access Denied',
+          description: 'Please enable camera permissions in your browser settings to use this app.',
+        });
+      }
+    };
+
+    getCameraPermission();
+  }, [toast]);
+  
+  const handleMuteToggle = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    stream?.getAudioTracks().forEach((track) => {
+      track.enabled = !nextMuted;
+    });
+  };
+
+  const handleCameraToggle = () => {
+    const nextCameraOff = !isCameraOff;
+    setIsCameraOff(nextCameraOff);
+    stream?.getVideoTracks().forEach((track) => {
+      track.enabled = !nextCameraOff;
+    });
+  };
 
   return (
     <TooltipProvider>
@@ -64,6 +114,40 @@ export default function RoomPage({ params }: { params: { id: string } }) {
             const isCurrentUser = participant.id === '1';
             const cameraOff = isCurrentUser ? isCameraOff : participant.isCameraOff;
             const muted = isCurrentUser ? isMuted : participant.isMuted;
+
+            if (isCurrentUser) {
+              return (
+                 <div key={participant.id} className="relative aspect-video overflow-hidden rounded-lg bg-card shadow-lg">
+                  <video ref={videoRef} autoPlay muted className={cn("h-full w-full object-cover", isCameraOff && "hidden")} />
+                  { hasCameraPermission === false && (
+                      <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <Alert variant="destructive">
+                          <AlertTitle>Camera Access Required</AlertTitle>
+                          <AlertDescription>
+                            Please allow camera access in your browser to share video.
+                          </AlertDescription>
+                        </Alert>
+                      </div>
+                  )}
+                  {cameraOff && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <Avatar className="h-24 w-24 border-2 border-background">
+                              <AvatarImage src={PlaceHolderImages.find(p => p.id === 'user-avatar')?.imageUrl} />
+                              <AvatarFallback>{participant.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                      </div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent p-2">
+                    <span className="font-medium text-white">{participant.name}</span>
+                     {muted ? (
+                      <MicOff className="h-5 w-5 text-white" />
+                    ) : (
+                      <Mic className="h-5 w-5 text-white" />
+                    )}
+                  </div>
+                </div>
+              )
+            }
 
             return (
               <div key={participant.id} className="relative aspect-video overflow-hidden rounded-lg bg-card shadow-lg">
@@ -99,7 +183,7 @@ export default function RoomPage({ params }: { params: { id: string } }) {
       <footer className="flex h-20 flex-shrink-0 items-center justify-center gap-2 sm:gap-4 border-t border-border bg-card px-4 md:px-6">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant={isMuted ? 'destructive' : 'secondary'} size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14" onClick={() => setIsMuted(!isMuted)}>
+            <Button variant={isMuted ? 'destructive' : 'secondary'} size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14" onClick={handleMuteToggle}>
               {isMuted ? <MicOff /> : <Mic />}
             </Button>
           </TooltipTrigger>
@@ -107,7 +191,7 @@ export default function RoomPage({ params }: { params: { id: string } }) {
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14" onClick={() => setIsCameraOff(!isCameraOff)}>
+            <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14" onClick={handleCameraToggle}>
               {isCameraOff ? <VideoOff /> : <Video />}
             </Button>
           </TooltipTrigger>
