@@ -1,3 +1,40 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "user-avatar",
+      "description": "User avatar",
+      "imageUrl": "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxwZXJzb24lMjBwb3J0cmFpdHxlbnwwfHx8fDE3Njk1MTg4NDB8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "person portrait"
+    },
+    {
+      "id": "user1",
+      "description": "User avatar 1",
+      "imageUrl": "https://images.unsplash.com/photo-1606660956148-5291deb68185?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8cGVyc29uJTIwc3R1ZGVudHxlbnwwfHx8fDE3Njk1MTAxODl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "person student"
+    },
+    {
+      "id": "user2",
+      "description": "User avatar 2",
+      "imageUrl": "https://images.unsplash.com/photo-1653130392844-9d2b5bda485b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxwZXJzb24lMjB1bml2ZXJzaXR5fGVufDB8fHx8MTc2OTUyNDM5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "person university"
+    },
+    {
+      "id": "user3",
+      "description": "User avatar 3",
+      "imageUrl": "https://images.unsplash.com/photo-1600431521176-c04a1acfc191?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxwZXJzb24lMjBsaWJyYXJ5fGVufDB8fHx8MTc2OTQ3Mzg2MXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "person library"
+    },
+    {
+      "id": "user4",
+      "description": "User avatar 4",
+      "imageUrl": "https://images.unsplash.com/photo-1532294220147-279399e4e00f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxwZXJzb24lMjByZWFkaW5nfGVufDB8fHx8MTc2OTQ0MDQ2NHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "person reading"
+    },
+    {
+      "id": "user5",
+      "description": "User avatar 5",
+      "imageUrl": "https://images.unsplash.com/photo-1494883759339-0b042055a4ee?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxwZXJzb24lMjB3cml0aW5nfGVufDB8fHx8MTc2OTUxMDE0MHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "person writing"
+    }
+  ]
 }
