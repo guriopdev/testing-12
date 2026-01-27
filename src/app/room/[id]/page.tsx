@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import {
   Mic,
   MicOff,
@@ -10,8 +9,6 @@ import {
   VideoOff,
   PhoneOff,
   Users,
-  Volume2,
-  VolumeX,
   Loader2,
 } from 'lucide-react';
 
@@ -29,7 +26,6 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -57,7 +53,7 @@ export default function RoomPage({ params }: { params: { id: string } }) {
   const participantsQuery = useMemoFirebase(() => collection(db, 'rooms', roomId, 'participants'), [db, roomId]);
   const { data: participants } = useCollection(participantsQuery);
 
-  // Participant Management
+  // Participant Presence Management
   useEffect(() => {
     if (!user || !db || !roomId) return;
 
@@ -71,14 +67,15 @@ export default function RoomPage({ params }: { params: { id: string } }) {
       joinedAt: serverTimestamp(),
     }, { merge: true });
 
+    // Remove presence on leave
     return () => {
       deleteDocumentNonBlocking(participantRef);
     };
   }, [user, db, roomId, isMuted, isCameraOff]);
 
-  // Camera/Mic Setup
+  // Camera/Mic Hardware Initialization
   useEffect(() => {
-    const getCameraPermission = async () => {
+    const getMediaPermission = async () => {
       try {
         const userStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setStream(userStream);
@@ -87,27 +84,26 @@ export default function RoomPage({ params }: { params: { id: string } }) {
           videoRef.current.srcObject = userStream;
         }
         
-        // Initial state: off
+        // Default to disabled tracks initially
         userStream.getVideoTracks().forEach((track) => (track.enabled = false));
         userStream.getAudioTracks().forEach((track) => (track.enabled = false));
-
       } catch (error) {
         console.error('Error accessing media:', error);
         setHasCameraPermission(false);
         toast({
           variant: 'destructive',
-          title: 'Access Denied',
-          description: 'Please enable camera and mic permissions to participate.',
+          title: 'Media Access Error',
+          description: 'Please ensure camera and microphone are connected and allowed in browser settings.',
         });
       }
     };
 
-    getCameraPermission();
+    getMediaPermission();
     
     return () => {
       stream?.getTracks().forEach(track => track.stop());
     };
-  }, [toast]);
+  }, []);
   
   const handleMuteToggle = () => {
     const nextMuted = !isMuted;
@@ -135,153 +131,179 @@ export default function RoomPage({ params }: { params: { id: string } }) {
 
   if (!room) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-background">
-        <h2 className="text-2xl font-bold mb-4">Room not found</h2>
-        <Button asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+      <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
+        <h2 className="text-3xl font-headline font-bold mb-4">Room Not Found</h2>
+        <p className="text-muted-foreground mb-8">This room may have been deleted or the link is invalid.</p>
+        <Button asChild className="bg-primary hover:bg-primary/80"><Link href="/dashboard">Return to Dashboard</Link></Button>
       </div>
     );
   }
 
   return (
     <TooltipProvider>
-    <div className="dark bg-background text-foreground flex h-screen w-full flex-col font-body">
-      <header className="flex h-16 items-center justify-between border-b border-white/5 bg-card/80 backdrop-blur-md px-4 md:px-6 flex-shrink-0 z-10">
+    <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
+      {/* Header */}
+      <header className="flex h-16 items-center justify-between border-b border-white/5 bg-black/40 backdrop-blur-xl px-4 md:px-6 flex-shrink-0 z-20">
         <div className="flex items-center gap-4">
           <h1 className="text-lg md:text-xl font-bold font-headline truncate max-w-[200px] sm:max-w-md">{room.name}</h1>
-          <Badge variant="secondary" className="hidden sm:flex bg-primary/10 text-primary border-primary/20">
+          <Badge variant="secondary" className="hidden sm:flex bg-primary/10 text-primary border-primary/20 font-medium">
             {room.topic}
           </Badge>
         </div>
-        <Button asChild variant="destructive" size="sm" className="rounded-full px-4 font-semibold shadow-lg shadow-destructive/20">
+        <Button asChild variant="destructive" size="sm" className="rounded-full px-4 font-semibold shadow-lg shadow-destructive/20 hover:scale-105 transition-transform">
           <Link href="/dashboard">
             <PhoneOff className="mr-2 h-4 w-4" />
-            Leave Room
+            Leave
           </Link>
         </Button>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-background to-background">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-          {/* Own Video */}
-          <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-white/5 shadow-2xl">
-            <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover", isCameraOff && "hidden")} />
+      {/* Video Grid */}
+      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent">
+        <div className="mx-auto max-w-7xl grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 content-start">
+          
+          {/* My Video Feed */}
+          <div className="relative aspect-video overflow-hidden rounded-2xl bg-card/50 border border-white/10 shadow-2xl group">
+            <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
+            
             { hasCameraPermission === false && (
-                <div className="absolute inset-0 flex items-center justify-center p-6 bg-black/60">
-                  <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive">
-                    <AlertTitle>Hardware Access Required</AlertTitle>
-                    <AlertDescription>
-                      Check browser permissions for camera/mic.
-                    </AlertDescription>
-                  </Alert>
-                </div>
+              <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
+                  <AlertTitle className="text-sm font-bold">Permissions Required</AlertTitle>
+                  <AlertDescription className="text-xs opacity-80">Check browser settings for camera/mic.</AlertDescription>
+                </Alert>
+              </div>
             )}
+
             {isCameraOff && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20">
-                    <Avatar className="h-24 w-24 border-4 border-background shadow-2xl ring-4 ring-primary/20">
-                        <AvatarImage src={user?.photoURL || ''} />
-                        <AvatarFallback className="text-3xl bg-primary text-white">{user?.displayName?.charAt(0) || '?'}</AvatarFallback>
-                    </Avatar>
-                </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/5">
+                <Avatar className="h-24 w-24 border-4 border-background shadow-2xl ring-4 ring-primary/20">
+                  <AvatarImage src={user?.photoURL || ''} />
+                  <AvatarFallback className="text-4xl bg-primary text-white font-headline">{user?.displayName?.charAt(0) || '?'}</AvatarFallback>
+                </Avatar>
+              </div>
             )}
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-white/10">
-              <span className="font-semibold text-white truncate text-sm">You (Me)</span>
-              {isMuted ? (
-                <MicOff className="h-4 w-4 text-destructive" />
-              ) : (
-                <Mic className="h-4 w-4 text-primary" />
-              )}
+
+            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-xs font-semibold text-white px-2">You</span>
+              <div className="p-1 rounded-full bg-black/40">
+                {isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
+              </div>
             </div>
+            {!isCameraOff && (
+               <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-widest drop-shadow-md">Live</span>
+               </div>
+            )}
           </div>
 
-          {/* Other Participants */}
+          {/* Other Real Participants */}
           {participants?.filter(p => p.userId !== user?.uid).map((p) => (
-            <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-white/5 shadow-xl transition-transform hover:scale-[1.02]">
-              {p.isCameraOff ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-secondary/40 to-primary/10">
-                    <Avatar className="h-24 w-24 border-4 border-background shadow-xl">
-                        <AvatarImage src={p.photoUrl} />
-                        <AvatarFallback className="text-3xl">{p.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                </div>
-              ) : (
-                <Image
-                  src={`https://picsum.photos/seed/${p.userId}/800/450`}
-                  alt={p.name}
-                  fill
-                  className="object-cover"
-                  data-ai-hint="person profile"
-                />
-              )}
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-white/10">
-                <span className="font-semibold text-white truncate text-sm">{p.name}</span>
-                 {p.isMuted ? (
-                  <MicOff className="h-4 w-4 text-destructive" />
-                ) : (
-                  <Mic className="h-4 w-4 text-primary" />
+            <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card/50 border border-white/10 shadow-xl transition-all hover:scale-[1.02] hover:shadow-primary/10">
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-secondary/40 to-primary/5">
+                <Avatar className="h-24 w-24 border-4 border-background shadow-xl ring-2 ring-white/5">
+                  <AvatarImage src={p.photoUrl} />
+                  <AvatarFallback className="text-4xl font-headline bg-card text-primary-foreground">{p.name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                {/* Note: In a real WebRTC app, this is where the remote video stream would go */}
+                {!p.isCameraOff && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+                    <Video className="h-12 w-12 text-primary/40" />
+                  </div>
                 )}
+              </div>
+
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
+                <span className="text-xs font-semibold text-white px-2 truncate">{p.name}</span>
+                <div className="p-1 rounded-full bg-black/40">
+                  {p.isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
+                </div>
               </div>
             </div>
           ))}
+
+          {/* Empty State for Remote Peers */}
+          {participants && participants.length === 1 && (
+            <div className="col-span-full py-12 flex flex-col items-center justify-center text-center animate-fade-in-up">
+              <div className="p-4 rounded-full bg-primary/10 mb-4 ring-1 ring-primary/20">
+                <Users className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-xl font-headline font-bold mb-2">You're the first one here!</h3>
+              <p className="text-muted-foreground text-sm max-w-xs">Share the room URL with study partners to start collaborating.</p>
+            </div>
+          )}
         </div>
       </main>
 
-      <footer className="flex h-24 flex-shrink-0 items-center justify-center gap-4 sm:gap-8 border-t border-white/5 bg-card/50 backdrop-blur-2xl px-4 md:px-6">
+      {/* Controls Footer */}
+      <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-white/5 bg-black/60 backdrop-blur-2xl px-4 z-20">
         <div className="flex items-center gap-4 px-6 py-3 bg-white/5 rounded-3xl border border-white/10 shadow-inner">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant={isMuted ? 'destructive' : 'secondary'} size="lg" className="rounded-full h-14 w-14 shadow-lg transition-all active:scale-95" onClick={handleMuteToggle}>
-                {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+              <Button 
+                variant={isMuted ? 'destructive' : 'secondary'} 
+                size="lg" 
+                className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105" 
+                onClick={handleMuteToggle}
+              >
+                {isMuted ? <MicOff className="h-5 w-5 sm:h-6 sm:w-6" /> : <Mic className="h-5 w-5 sm:h-6 sm:w-6" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
+            <TooltipContent className="bg-popover text-popover-foreground border-primary/20"><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
           </Tooltip>
           
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="lg" className="rounded-full h-14 w-14 shadow-lg transition-all active:scale-95" onClick={handleCameraToggle}>
-                {isCameraOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
+              <Button 
+                variant={isCameraOff ? 'destructive' : 'secondary'} 
+                size="lg" 
+                className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105" 
+                onClick={handleCameraToggle}
+              >
+                {isCameraOff ? <VideoOff className="h-5 w-5 sm:h-6 sm:w-6" /> : <Video className="h-5 w-5 sm:h-6 sm:w-6" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
+            <TooltipContent className="bg-popover text-popover-foreground border-primary/20"><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="h-10 bg-white/10" />
+          <Separator orientation="vertical" className="h-8 bg-white/10" />
 
           <Sheet>
             <SheetTrigger asChild>
-               <Tooltip>
-                  <TooltipTrigger asChild>
-                      <Button variant="secondary" size="lg" className="rounded-full h-14 w-14 shadow-lg transition-all active:scale-95">
-                          <Users className="h-6 w-6" />
-                      </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>Participants List</p></TooltipContent>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105">
+                    <Users className="h-5 w-5 sm:h-6 sm:w-6" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-popover text-popover-foreground border-primary/20"><p>Participants</p></TooltipContent>
               </Tooltip>
             </SheetTrigger>
-            <SheetContent className="dark w-full max-w-sm bg-card/95 backdrop-blur-xl border-l-white/10" side="right">
-              <SheetHeader>
-                <SheetTitle className="font-headline text-2xl flex items-center gap-2">
+            <SheetContent className="w-full max-w-sm bg-card/95 backdrop-blur-2xl border-l border-white/10" side="right">
+              <SheetHeader className="pb-4">
+                <SheetTitle className="font-headline text-2xl flex items-center gap-3">
                   <Users className="h-6 w-6 text-primary" />
                   Study Group ({participants?.length || 0})
                 </SheetTitle>
               </SheetHeader>
-              <Separator className="my-6 bg-white/5" />
-              <div className="flex flex-col gap-4">
+              <Separator className="bg-white/5 mb-6" />
+              <div className="flex flex-col gap-3">
                 {participants?.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
+                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10">
-                          <AvatarImage src={p.photoUrl} />
-                          <AvatarFallback className="bg-primary/20 text-primary">{p.name.charAt(0)}</AvatarFallback>
+                      <Avatar className="h-10 w-10 border border-primary/20">
+                        <AvatarImage src={p.photoUrl} />
+                        <AvatarFallback className="bg-primary/20 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col">
                         <span className="font-semibold text-sm">{p.name}</span>
-                        {p.userId === user?.uid && <span className="text-[10px] uppercase tracking-wider text-primary font-bold">You</span>}
+                        {p.userId === user?.uid && <span className="text-[10px] uppercase tracking-wider text-primary font-bold leading-none mt-0.5">You</span>}
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      {p.isMuted ? <MicOff className="h-4 w-4 text-destructive/60" /> : <Mic className="h-4 w-4 text-primary/60" />}
-                      {p.isCameraOff ? <VideoOff className="h-4 w-4 text-muted-foreground/60" /> : <Video className="h-4 w-4 text-primary/60" />}
+                      {p.isMuted ? <MicOff className="h-4 w-4 text-destructive/50" /> : <Mic className="h-4 w-4 text-primary/50" />}
+                      {p.isCameraOff ? <VideoOff className="h-4 w-4 text-muted-foreground/30" /> : <Video className="h-4 w-4 text-primary/50" />}
                     </div>
                   </div>
                 ))}
@@ -290,6 +312,11 @@ export default function RoomPage({ params }: { params: { id: string } }) {
           </Sheet>
         </div>
       </footer>
+      <style jsx global>{`
+        .mirror {
+          transform: scaleX(-1);
+        }
+      `}</style>
     </div>
     </TooltipProvider>
   );

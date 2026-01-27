@@ -1,11 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Chrome, Loader2 } from 'lucide-react';
+import { Chrome, Loader2, Sparkles } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { useAuth, useUser } from '@/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -25,14 +24,24 @@ export default function Home() {
 
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error('Sign in error:', error);
+      
+      let message = 'Could not complete sign in. Please try again.';
+      if (error.code === 'auth/operation-not-allowed') {
+        message = 'Google sign-in is not enabled in Firebase Console. Please follow instructions provided to enable it.';
+      } else if (error.code === 'auth/popup-blocked') {
+        message = 'Popup was blocked by your browser. Please allow popups for this site.';
+      }
+
       toast({
         variant: 'destructive',
-        title: 'Sign In Failed',
-        description: error.message || 'Could not complete Google sign in.',
+        title: 'Sign In Error',
+        description: message,
       });
     }
   };
@@ -46,29 +55,41 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-background p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/20 via-background to-background">
-      <Card className="w-full max-w-md shadow-2xl border-primary/20 bg-card/50 backdrop-blur-xl animate-fade-in-up">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-6">
+    <main className="flex min-h-screen w-full items-center justify-center bg-background p-4 relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent/10 blur-[120px] rounded-full pointer-events-none" />
+      
+      <Card className="w-full max-w-md shadow-2xl border-white/5 bg-black/40 backdrop-blur-2xl animate-fade-in-up z-10">
+        <CardHeader className="text-center pt-10">
+          <div className="mx-auto mb-8 scale-125">
             <Logo />
           </div>
-          <CardTitle className="text-3xl font-headline tracking-tight">Join the Community</CardTitle>
-          <CardDescription className="text-base">
-            Collaborate, learn, and grow with students from around the world in real-time.
+          <CardTitle className="text-4xl font-headline tracking-tighter bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent">
+            Focus Better Together
+          </CardTitle>
+          <CardDescription className="text-base text-muted-foreground/80 mt-2 px-2">
+            The ultimate collaborative workspace for students worldwide. Real-time video, zero friction.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <p className="text-center text-sm text-muted-foreground px-4">
-            Sign in to access shared study rooms or create your own focused learning environment.
-          </p>
-          <Button onClick={handleGoogleSignIn} className="w-full h-12 text-lg font-medium" size="lg">
-            <Chrome className="mr-2 h-5 w-5" />
-            Sign in with Google
-          </Button>
-          <div className="text-center">
-            <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-primary transition-colors">
-              Continue as guest (limited features)
-            </Link>
+        <CardContent className="space-y-8 pb-10">
+          <div className="flex flex-col gap-4">
+            <Button onClick={handleGoogleSignIn} className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xl shadow-primary/20 rounded-xl" size="lg">
+              <Chrome className="mr-2 h-6 w-6" />
+              Sign in with Google
+            </Button>
+            
+            <div className="flex items-center gap-2 justify-center py-2">
+              <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Secure University Portal</span>
+              <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+            </div>
+          </div>
+
+          <div className="text-center space-y-4">
+            <p className="text-xs text-muted-foreground leading-relaxed px-4">
+              By joining, you agree to our Study Code of Conduct. Keep it respectful and productive.
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -1,171 +1,24 @@
-/**
- * # Core Philosophy
- * This ruleset enforces a strict user-ownership model. All user data, including profile
- * information and the study rooms they create, is private and accessible only to the
- * authenticated owner. Public access is disabled by default to ensure user privacy.
- *
- * # Data Structure
- * The data is organized hierarchically under two main top-level collections:
- * - `/users/{userId}`: Contains private user profile documents and their created study rooms
- *   in a subcollection. Access is strictly controlled by the `{userId}` wildcard.
- * - `/study_rooms_participants/{roomId}`: A dedicated collection group for managing room
- *   membership. This structure allows for efficient queries of participants within a
- *   specific room, independent of the user who created the room.
- *
- * # Key Security Decisions
- * - **No User Listing**: Listing documents in the top-level `/users` collection is disabled to
- *   prevent enumeration of all application users.
- * - **Strict Ownership**: All documents and subcollections under `/users/{userId}` can only
- *   be accessed by the user whose UID matches `{userId}`.
- * - **Participant Visibility**: While a user can only modify their own participant record,
- *   any authenticated user can view the list of participants in a study room. This is
- *   necessary for the in-room user interface to function correctly.
- * - **Default Deny**: Any path not explicitly matched is denied access.
- *
- * # Denormalization for Authorization
- * The `RoomParticipant` documents in `/study_rooms_participants` contain denormalized
- * `userId` and `roomId` fields. This is a deliberate design choice that allows security
- * rules to authorize actions based on fields within the document itself, avoiding slow and
- * costly `get()` calls to other documents. This ensures that rules are both performant and
- * scalable.
- *
- * # Structural Segregation
- * User-owned data (profiles, created rooms) is segregated in the `/users` collection, while
- * collaborative, cross-user data (room participation) is in its own
- * `/study_rooms_participants` collection. This clean separation simplifies security logic.
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // =====================================================================
-    // Helper Functions
-    // =====================================================================
-
-    /**
-     * Checks if a user is authenticated.
-     */
     function isSignedIn() {
       return request.auth != null;
     }
-
-    /**
-     * Checks if the currently authenticated user's UID matches the provided userId.
-     * This is the foundation of the ownership model.
-     * @param userId The UID of the resource owner.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
     
-    /**
-     * Checks for ownership on an existing document. Used for safe updates and deletes.
-     * Prevents operations on documents that do not exist.
-     * @param userId The UID of the resource owner.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
-    // --- Validation Helpers (Prototyping: Authorization & Integrity Only) ---
-    
-    /**
-     * Validates required fields for creating a new User document.
-     * Enforces consistency between the document ID and its internal 'id' field.
-     */
-    function isValidUserCreate(userId) {
-      return request.resource.data.id == userId;
-    }
-
-    /**
-     * Ensures critical, identity-related fields on a User document cannot be changed after creation.
-     */
-    function isImmutableUser() {
-      return request.resource.data.id == resource.data.id;
-    }
-
-    /**
-     * Validates required fields for creating a new StudyRoom document.
-     * Enforces that the creatorId matches the authenticated user creating the room.
-     */
-    function isValidStudyRoomCreate(userId) {
-      return request.resource.data.creatorId == userId;
-    }
-
-    /**
-     * Ensures the ownership link (creatorId) of a StudyRoom cannot be changed.
-     */
-    function isImmutableStudyRoom() {
-      return request.resource.data.creatorId == resource.data.creatorId;
-    }
-
-    /**
-     * Validates required fields for a user joining a room (creating a participant document).
-     * Enforces that a user can only create a participant document for themselves and that
-     * the path roomId matches the data.
-     */
-    function isValidParticipantCreate(roomId) {
-      return request.resource.data.userId == request.auth.uid
-        && request.resource.data.roomId == roomId;
-    }
-
-    /**
-     * Ensures relational integrity fields on a participant document are immutable.
-     */
-    function isImmutableParticipant() {
-      return request.resource.data.userId == resource.data.userId
-        && request.resource.data.roomId == resource.data.roomId;
-    }
-
-    // =====================================================================
-    // Collection Rules
-    // =====================================================================
-
-    /**
-     * @description Secures user profile documents. Only the owner can read or write their own profile.
-     * @path        /users/{userId}
-     * @allow       (get, update) A signed-in user with uid 'user_abc' accessing '/users/user_abc'.
-     * @deny        (get, list) A signed-in user with uid 'user_xyz' accessing '/users/user_abc'.
-     * @principle   Restricts access to a user's own data tree.
-     */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false; // Disallow listing of user profiles for privacy.
-      allow create: if isOwner(userId) && isValidUserCreate(userId);
-      allow update: if isExistingOwner(userId) && isImmutableUser();
-      allow delete: if isExistingOwner(userId);
-
-      /**
-       * @description Secures study rooms created by a user. Only the owner can manage their rooms.
-       * @path        /users/{userId}/studyRooms/{studyRoomId}
-       * @allow       (create, list) A signed-in user with uid 'user_abc' accessing '/users/user_abc/studyRooms'.
-       * @deny        (get) A signed-in user with uid 'user_xyz' accessing '/users/user_abc/studyRooms/room123'.
-       * @principle   Enforces strict ownership on a user's subcollections.
-       */
-      match /studyRooms/{studyRoomId} {
-        allow get: if isOwner(userId);
-        allow list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidStudyRoomCreate(userId);
-        allow update: if isExistingOwner(userId) && isImmutableStudyRoom();
-        allow delete: if isExistingOwner(userId);
-      }
+      allow get, create, update: if request.auth != null && request.auth.uid == userId;
     }
     
-    /**
-     * @description Manages user participation in study rooms. Any signed-in user can see who is
-     *              in a room, but can only create, update, or delete their OWN participation record.
-     * @path        /study_rooms_participants/{roomId}/{roomParticipantId}
-     * @allow       (create) User 'user_abc' creating their own participant record in room 'room123'.
-     * @allow       (list) Any authenticated user listing participants for '/study_rooms_participants/room123'.
-     * @deny        (update) User 'user_xyz' trying to update the participant record for user 'user_abc'.
-     * @principle   Allows public read for authenticated users while restricting writes to the document owner.
-     */
-    match /study_rooms_participants/{roomId}/{roomParticipantId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidParticipantCreate(roomId);
-      allow update: if resource != null && isOwner(resource.data.userId) && isImmutableParticipant();
-      allow delete: if resource != null && isOwner(resource.data.userId);
+    match /rooms/{roomId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource.data.creatorId == request.auth.uid;
+      
+      match /participants/{participantId} {
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn() && participantId == request.auth.uid;
+        allow delete: if isSignedIn() && participantId == request.auth.uid;
+      }
     }
   }
 }
