@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Avatar,
   AvatarFallback,
@@ -14,41 +17,60 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { useAuth, useUser } from '@/firebase';
+import { signOut } from 'firebase/auth';
 
 export function UserNav() {
-  const userAvatar = PlaceHolderImages.find(p => p.id === 'user-avatar');
+  const { user } = useUser();
+  const auth = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    router.push('/');
+  };
+
+  if (!user) {
+    return (
+      <Button asChild variant="outline" size="sm">
+        <Link href="/">Sign In</Link>
+      </Button>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={userAvatar?.imageUrl} alt="@student" data-ai-hint={userAvatar?.imageHint} />
-            <AvatarFallback>S</AvatarFallback>
+        <Button variant="ghost" className="relative h-10 w-10 rounded-full border border-primary/20 p-0.5 transition-all hover:scale-110">
+          <Avatar className="h-full w-full">
+            <AvatarImage src={user.photoURL || ''} alt={user.displayName || 'User'} />
+            <AvatarFallback className="bg-primary text-primary-foreground font-bold">
+              {user.displayName?.charAt(0) || 'U'}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
-        <DropdownMenuLabel className="font-normal">
+      <DropdownMenuContent className="w-64 border-primary/20 bg-card/95 backdrop-blur-xl" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal p-4">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">Student</p>
-            <p className="text-xs leading-none text-muted-foreground">
-              student@example.com
+            <p className="text-sm font-bold leading-none font-headline">{user.displayName || 'Student'}</p>
+            <p className="text-xs leading-none text-muted-foreground truncate">
+              {user.email}
             </p>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem>
-            Profile
+        <DropdownMenuSeparator className="bg-white/5" />
+        <DropdownMenuGroup className="p-1">
+          <DropdownMenuItem className="rounded-md focus:bg-primary/10 focus:text-primary">
+            Profile Settings
           </DropdownMenuItem>
-          <DropdownMenuItem>
-            Settings
+          <DropdownMenuItem className="rounded-md focus:bg-primary/10 focus:text-primary">
+            My Stats
           </DropdownMenuItem>
         </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/">Log out</Link>
+        <DropdownMenuSeparator className="bg-white/5" />
+        <DropdownMenuItem onClick={handleLogout} className="p-3 text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer font-semibold">
+          Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

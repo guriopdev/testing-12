@@ -1,179 +1,61 @@
 {
   "entities": {
     "User": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
       "type": "object",
       "description": "Represents a user of the StudyParadox application.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the user."
-        },
-        "googleId": {
-          "type": "string",
-          "description": "Google ID of the user, obtained during Google authentication."
-        },
-        "email": {
-          "type": "string",
-          "description": "Email address of the user.",
-          "format": "email"
-        },
-        "displayName": {
-          "type": "string",
-          "description": "Display name of the user."
-        },
-        "profilePictureUrl": {
-          "type": "string",
-          "description": "URL of the user's profile picture.",
-          "format": "uri"
-        }
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoUrl": { "type": "string", "format": "uri" }
       },
-      "required": [
-        "id",
-        "googleId",
-        "email",
-        "displayName"
-      ]
+      "required": ["id", "email", "displayName"]
     },
-    "StudyRoom": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "StudyRoom",
+    "Room": {
+      "title": "Room",
       "type": "object",
-      "description": "Represents a video calling room for group study.",
+      "description": "A study room for collaboration.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the study room."
-        },
-        "name": {
-          "type": "string",
-          "description": "Name of the study room."
-        },
-        "description": {
-          "type": "string",
-          "description": "Description of the study room."
-        },
-        "creatorId": {
-          "type": "string",
-          "description": "Reference to User. (Relationship: User 1:N StudyRoom). The user ID of the room creator."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp indicating when the study room was created.",
-          "format": "date-time"
-        }
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "topic": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "id",
-        "name",
-        "description",
-        "creatorId",
-        "createdAt"
-      ]
+      "required": ["id", "name", "topic", "creatorId"]
     },
-    "RoomParticipant": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "RoomParticipant",
+    "Participant": {
+      "title": "Participant",
       "type": "object",
-      "description": "Represents a user's participation in a study room.",
+      "description": "A user currently in a room.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the room participant entry."
-        },
-        "roomId": {
-          "type": "string",
-          "description": "Reference to StudyRoom. (Relationship: StudyRoom 1:N RoomParticipant). The study room ID."
-        },
-        "userId": {
-          "type": "string",
-          "description": "Reference to User. (Relationship: User 1:N RoomParticipant). The user ID of the participant."
-        },
-        "joinedAt": {
-          "type": "string",
-          "description": "Timestamp indicating when the user joined the room.",
-          "format": "date-time"
-        },
-        "isMuted": {
-          "type": "boolean",
-          "description": "Indicates whether the participant is muted."
-        }
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "isMuted": { "type": "boolean" },
+        "isCameraOff": { "type": "boolean" },
+        "joinedAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "id",
-        "roomId",
-        "userId",
-        "joinedAt",
-        "isMuted"
-      ]
+      "required": ["userId", "name"]
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["google"]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/users/{userId}",
-        "definition": {
-          "entityName": "User",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Stores user profile information. User documents are secured via path-based rules (`request.auth.uid == userId`).",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/users/{userId}/studyRooms/{studyRoomId}",
-        "definition": {
-          "entityName": "StudyRoom",
-          "schema": {
-            "$ref": "#/backend/entities/StudyRoom"
-          },
-          "description": "Stores study room information.  Rooms are owned by a user. Permissions are based on the `creatorId` and `userId`.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user who created the study room."
-            },
-            {
-              "name": "studyRoomId",
-              "description": "The unique identifier of the study room."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/study_rooms_participants/{roomId}/{roomParticipantId}",
-        "definition": {
-          "entityName": "RoomParticipant",
-          "schema": {
-            "$ref": "#/backend/entities/RoomParticipant"
-          },
-          "description": "Stores information about users participating in study rooms. Includes denormalized 'roomId' for authorization independence, enabling secure list operations and simplifying security rules. Authorization is performed using `request.auth.uid == resource.data.userId`.",
-          "params": [
-            {
-              "name": "roomId",
-              "description": "The unique identifier of the study room."
-            },
-            {
-              "name": "roomParticipantId",
-              "description": "The unique identifier of the room participant entry."
-            }
-          ]
-        }
-      }
-    ],
-    "reasoning": "The Firestore structure is designed to support the StudyParadox application, prioritizing authorization independence, clarity, and scalability.  User data is stored in `/users/{userId}`. Study rooms, owned by users, are located in `/users/{userId}/studyRooms/{studyRoomId}`. RoomParticipant documents reside within `/study_rooms_participants/{roomId}/{roomParticipantId}`. The `RoomParticipant` documents include denormalized data (specifically `roomId`) to facilitate authorization checks without requiring `get()` calls to parent documents, supporting atomic operations. The `study_rooms_participants` collection group enables listing participants across all rooms and simplifies security rules."
+    "/users/{userId}": {
+      "schema": "#/backend/entities/User",
+      "description": "User profiles."
+    },
+    "/rooms/{roomId}": {
+      "schema": "#/backend/entities/Room",
+      "description": "Publicly accessible study rooms."
+    },
+    "/rooms/{roomId}/participants/{participantId}": {
+      "schema": "#/backend/entities/Participant",
+      "description": "Active participants in a room."
+    }
   }
 }
