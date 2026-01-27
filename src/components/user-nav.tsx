@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
+import { User, LayoutDashboard, Settings, LogOut } from 'lucide-react';
 
 export function UserNav() {
   const { user } = useUser();
@@ -61,15 +62,22 @@ export function UserNav() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/5" />
         <DropdownMenuGroup className="p-1">
-          <DropdownMenuItem className="rounded-md focus:bg-primary/10 focus:text-primary">
-            Profile Settings
+          <DropdownMenuItem asChild className="rounded-md focus:bg-primary/10 focus:text-primary cursor-pointer">
+            <Link href="/dashboard" className="flex items-center">
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Dashboard
+            </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem className="rounded-md focus:bg-primary/10 focus:text-primary">
-            My Stats
+          <DropdownMenuItem asChild className="rounded-md focus:bg-primary/10 focus:text-primary cursor-pointer">
+            <Link href="/dashboard/profile" className="flex items-center">
+              <Settings className="mr-2 h-4 w-4" />
+              Profile Settings
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="bg-white/5" />
         <DropdownMenuItem onClick={handleLogout} className="p-3 text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer font-semibold">
+          <LogOut className="mr-2 h-4 w-4" />
           Log out
         </DropdownMenuItem>
       </DropdownMenuContent>

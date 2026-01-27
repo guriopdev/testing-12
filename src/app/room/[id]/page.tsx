@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, use } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Mic,
   MicOff,
@@ -14,6 +15,7 @@ import {
   Send,
   Lock,
   ChevronRight,
+  Trash2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -55,6 +57,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const db = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
+  const router = useRouter();
 
   // Local UI State
   const [isMuted, setIsMuted] = useState(true);
@@ -111,7 +114,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         if (videoRef.current) {
           videoRef.current.srcObject = userStream;
         }
-        // Sync tracks with local state
         userStream.getVideoTracks().forEach((track) => (track.enabled = !isCameraOff));
         userStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
       } catch (error) {
@@ -177,6 +179,15 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
+  const handleDeleteRoom = () => {
+    if (!room || !user || room.creatorId !== user.uid) return;
+    
+    if (confirm('Are you sure you want to end this session and delete the room?')) {
+      deleteDocumentNonBlocking(roomRef);
+      router.push('/dashboard');
+    }
+  };
+
   if (isRoomLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-black">
@@ -230,6 +241,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     );
   }
 
+  const isCreator = user?.uid === room.creatorId;
+
   return (
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-black font-body text-white overflow-hidden">
@@ -247,12 +260,25 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </div>
           )}
         </div>
-        <Button asChild variant="destructive" size="sm" className="rounded-full px-4 font-semibold shadow-lg shadow-destructive/20 hover:scale-105 transition-transform">
-          <Link href="/dashboard">
-            <PhoneOff className="mr-2 h-4 w-4" />
-            Leave
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {isCreator && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="hidden sm:flex rounded-full border-destructive/20 text-destructive hover:bg-destructive hover:text-white"
+              onClick={handleDeleteRoom}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Close Room
+            </Button>
+          )}
+          <Button asChild variant="destructive" size="sm" className="rounded-full px-4 font-semibold shadow-lg shadow-destructive/20 hover:scale-105 transition-transform">
+            <Link href="/dashboard">
+              <PhoneOff className="mr-2 h-4 w-4" />
+              Leave
+            </Link>
+          </Button>
+        </div>
       </header>
 
       {/* Main Layout: Video + Sidebar Chat */}
@@ -420,14 +446,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           {/* Chat for Mobile (Sheet) */}
           <Sheet>
             <SheetTrigger asChild>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105 lg:hidden bg-white/10 text-white hover:bg-primary/20">
-                    <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="bg-black text-white border-primary/20"><p>Chat</p></TooltipContent>
-              </Tooltip>
+              <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105 lg:hidden bg-white/10 text-white hover:bg-primary/20">
+                <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
+              </Button>
             </SheetTrigger>
             <SheetContent className="w-full sm:max-w-sm bg-black/95 backdrop-blur-2xl border-l border-primary/20 p-0 flex flex-col text-white" side="right">
               <SheetHeader className="p-4 border-b border-white/5">
@@ -470,14 +491,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
           <Sheet>
             <SheetTrigger asChild>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105 bg-white/10 text-white hover:bg-primary/20">
-                    <Users className="h-5 w-5 sm:h-6 sm:w-6" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="bg-black text-white border-primary/20"><p>Participants</p></TooltipContent>
-              </Tooltip>
+              <Button variant="secondary" size="lg" className="rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-lg transition-all active:scale-90 hover:scale-105 bg-white/10 text-white hover:bg-primary/20">
+                <Users className="h-5 w-5 sm:h-6 sm:w-6" />
+              </Button>
             </SheetTrigger>
             <SheetContent className="w-full sm:max-w-sm bg-black/95 backdrop-blur-2xl border-l border-primary/20 text-white" side="right">
               <SheetHeader className="pb-4">
