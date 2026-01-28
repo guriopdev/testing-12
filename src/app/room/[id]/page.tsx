@@ -16,18 +16,11 @@ import {
   Send,
   Lock,
   ChevronRight,
-  Trash2,
-  MoreVertical,
-  UserPlus,
-  CheckCircle2,
-  Globe,
-  UserCircle,
   Pin,
   PinOff,
   Instagram,
   Trophy,
   Zap,
-  Clock,
   ExternalLink,
   ShieldAlert,
 } from 'lucide-react';
@@ -51,7 +44,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { 
@@ -65,22 +58,6 @@ import {
   addDocumentNonBlocking 
 } from '@/firebase';
 import { doc, collection, serverTimestamp, query, orderBy, where, getDoc } from 'firebase/firestore';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // TEST MODE: 4 seconds threshold. Production: 3600 (1 hour).
@@ -93,17 +70,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const db = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
-  const router = useRouter();
 
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | undefined>(undefined);
   const [passwordInput, setPasswordInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   
   // Reward System State
@@ -128,20 +101,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   ), [db, roomId]);
   const { data: messages } = useCollection(messagesQuery);
 
-  const requestsQuery = useMemoFirebase(() => {
-    if (!user) return null;
-    return query(collection(db, 'friendRequests'), where('senderId', '==', user.uid));
-  }, [user]);
-  const { data: sentRequests } = useCollection(requestsQuery);
-
-  const selectedUserRef = useMemoFirebase(() => {
-    if (!db || !selectedParticipant) return null;
-    return doc(db, 'users', selectedParticipant.userId);
-  }, [db, selectedParticipant]);
-  const { data: selectedUserData } = useDoc(selectedUserRef);
-
-  const isFull = participants && room && participants.length >= (room.maxParticipants || 10) && !participants.find(p => p.userId === user?.uid);
-
   useEffect(() => {
     if (!roomId) return;
     const sessionKey = `room_unlocked_${roomId}`;
@@ -154,45 +113,38 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   // TRACKING: Study Cycle and Reward logic
   useEffect(() => {
-    if (!user || !db || (room?.password && !isUnlocked) || isFull) return;
+    if (!user || !db || (room?.password && !isUnlocked)) return;
 
     const interval = setInterval(() => {
-      if (!isRewardActive) {
+      if (!isRewardActive && !isBreakOverdue) {
         setSessionSeconds((prev) => {
           const next = prev + 1;
-          if (next === STUDY_THRESHOLD) {
-            setTimeout(() => {
-              setIsRewardActive(true);
-              setIsBreakOverdue(false);
-              setRewardTimeLeft(REWARD_DURATION);
-              toast({
-                title: "Focus Reward Unlocked! 🏆",
-                description: `Deep work complete. Enjoy your break!`,
-                className: "bg-primary text-primary-foreground font-bold border-none",
-              });
-            }, 0);
+          if (next >= STUDY_THRESHOLD) {
+            setIsRewardActive(true);
+            setRewardTimeLeft(REWARD_DURATION);
+            toast({
+              title: "Focus Reward Unlocked! 🏆",
+              description: `Deep work complete. Enjoy your 10min break!`,
+              className: "bg-primary text-primary-foreground font-bold border-none",
+            });
           }
           return next;
         });
-      } else {
+      } else if (isRewardActive) {
         setRewardTimeLeft((prev) => {
           const next = prev - 1;
           if (next <= 0) {
-            setTimeout(() => {
-              // ATTEMPT TO CLOSE WINDOW
-              if (rewardWindowRef.current) {
-                rewardWindowRef.current.close();
-                rewardWindowRef.current = null;
-              }
-              setIsRewardActive(false);
-              setIsBreakOverdue(true); // TRIGGER THE LOCK OVERLAY
-              setSessionSeconds(0);
-              toast({
-                title: "Break Over! 🛑",
-                description: "Session re-locked. Resume focus immediately.",
-                variant: "destructive",
-              });
-            }, 0);
+            if (rewardWindowRef.current) {
+              rewardWindowRef.current.close();
+              rewardWindowRef.current = null;
+            }
+            setIsRewardActive(false);
+            setIsBreakOverdue(true); // TRIGGER THE HARD LOCK OVERLAY
+            toast({
+              title: "Break Over! 🛑",
+              description: "Session re-locked. Return to focus immediately.",
+              variant: "destructive",
+            });
             return 0;
           }
           return next;
@@ -201,11 +153,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [user, db, room?.password, isUnlocked, isFull, isRewardActive, toast]);
+  }, [user, db, room?.password, isUnlocked, isRewardActive, isBreakOverdue, toast]);
 
   // Sync participant status
   useEffect(() => {
-    if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
+    if (!user || !db || !roomId || (room?.password && !isUnlocked)) return;
 
     const syncParticipant = async () => {
       const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
@@ -224,17 +176,16 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
       deleteDocumentNonBlocking(participantRef);
     };
-  }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked, isFull]);
+  }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
 
   // Media Permissions
   useEffect(() => {
-    if ((room?.password && !isUnlocked) || isFull) return;
+    if ((room?.password && !isUnlocked)) return;
 
     const getMediaPermission = async () => {
       try {
         const userStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setStream(userStream);
-        setHasCameraPermission(true);
         if (videoRef.current) {
           videoRef.current.srcObject = userStream;
         }
@@ -242,7 +193,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         userStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
       } catch (error) {
         console.error('Error accessing media:', error);
-        setHasCameraPermission(false);
       }
     };
 
@@ -251,7 +201,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return () => {
       stream?.getTracks().forEach(track => track.stop());
     };
-  }, [room?.password, isUnlocked, isFull]);
+  }, [room?.password, isUnlocked]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -335,16 +285,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     );
   }
 
-  if (isFull) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
-        <Users className="h-16 w-16 text-destructive mb-4" />
-        <h2 className="text-3xl font-headline font-bold mb-4 text-foreground">Room Full</h2>
-        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
-      </div>
-    );
-  }
-
   if (room.password && !isUnlocked) {
     return (
       <div className="flex h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
@@ -369,7 +309,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     );
   }
 
-  const isCreator = user?.uid === room.creatorId;
   const pinnedParticipant = participants?.find(p => p.userId === pinnedId) || (pinnedId === user?.uid ? { userId: user?.uid, name: 'You', photoUrl: user?.photoURL || '' } : null);
   const studyProgress = Math.min((sessionSeconds / STUDY_THRESHOLD) * 100, 100);
   const rewardProgress = Math.max(0, Math.min((rewardTimeLeft / REWARD_DURATION) * 100, 100));
@@ -377,21 +316,80 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   return (
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
-      {/* OVERDUE LOCK OVERLAY */}
+      
+      {/* 🛑 HARD LOCKDOWN OVERLAY (Triggers when break ends) */}
       {isBreakOverdue && (
-        <div className="absolute inset-0 z-[100] bg-background/90 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-500">
-           <Card className="max-w-md w-full border-primary/30 bg-card/60 p-10 text-center space-y-8 shadow-[0_0_100px_rgba(var(--primary),0.2)]">
-              <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto ring-2 ring-primary/20">
-                <ShieldAlert className="h-10 w-10 text-primary" />
+        <div className="fixed inset-0 z-[100] bg-background/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-500">
+           <Card className="max-w-md w-full border-primary/40 bg-card/60 p-10 text-center space-y-8 shadow-[0_0_100px_rgba(var(--primary),0.2)]">
+              <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto ring-4 ring-primary/20 animate-pulse">
+                <ShieldAlert className="h-12 w-12 text-primary" />
               </div>
-              <div className="space-y-2">
-                <h2 className="text-3xl font-headline font-bold">Focus Mode Locked</h2>
-                <p className="text-muted-foreground">Your social break has expired. Access to the study room is locked until you resume your session.</p>
+              <div className="space-y-3">
+                <h2 className="text-4xl font-headline font-bold text-foreground">Time's Up!</h2>
+                <p className="text-muted-foreground text-lg">Your social break has officially expired. The workspace is locked to protect your focus.</p>
               </div>
-              <Button onClick={handleResumeStudy} size="lg" className="w-full h-14 bg-primary text-primary-foreground text-xl font-bold rounded-2xl shadow-xl shadow-primary/20 transition-transform active:scale-95">
-                Resume Study Session
+              <Button onClick={handleResumeStudy} size="lg" className="w-full h-16 bg-primary text-primary-foreground text-xl font-bold rounded-2xl shadow-xl shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+                Resume Deep Work
               </Button>
            </Card>
+        </div>
+      )}
+
+      {/* 🎁 REWARD PORTAL OVERLAY (Active during break) */}
+      {isRewardActive && (
+        <div className="fixed inset-0 z-[90] bg-background/90 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+            <Card className="max-w-4xl w-full border-emerald-500/30 bg-card/80 flex flex-col overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-white/5 bg-emerald-500/10 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-emerald-500/20 rounded-xl">
+                    <Instagram className="h-8 w-8 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-headline font-bold text-emerald-400 uppercase tracking-widest">Social Break Portal</h2>
+                    <p className="text-xs text-emerald-400/60 font-medium">StudyParadox Focus Guard Active</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="text-sm font-bold text-emerald-400 font-mono">
+                    {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
+                  </span>
+                  <Progress value={rewardProgress} className="w-40 h-2 bg-white/10" />
+                </div>
+              </div>
+
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-10">
+                <div className="relative">
+                  <Zap className="h-20 w-20 text-emerald-500 animate-pulse relative z-10" />
+                  <div className="absolute inset-0 bg-emerald-500/20 blur-2xl rounded-full" />
+                </div>
+                
+                <div className="space-y-4 max-w-xl">
+                  <h3 className="text-4xl font-bold font-headline">Break Earned!</h3>
+                  <p className="text-muted-foreground text-lg leading-relaxed">
+                    You've successfully completed your focus block. Use the portal below to access Instagram. 
+                    <br/><br/>
+                    <strong>WARNING:</strong> The room will <strong>Hard Lock</strong> in {rewardTimeLeft} seconds. Return here to resume your streak.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+                  <Button onClick={handleOpenInstagram} size="lg" className="h-20 px-12 bg-emerald-500 text-white font-bold text-2xl hover:bg-emerald-600 rounded-3xl shadow-2xl shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95 group">
+                    <ExternalLink className="mr-3 h-7 w-7 transition-transform group-hover:rotate-12" />
+                    Open Instagram
+                  </Button>
+                  
+                  <Button variant="outline" size="lg" className="h-20 px-10 border-white/10 hover:bg-white/5 text-muted-foreground font-bold rounded-3xl" onClick={() => setIsRewardActive(false)}>
+                    Skip & Return
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="p-4 bg-black/40 text-center">
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.2em] opacity-40">
+                  Secured by StudyParadox Protocol • No loopholes detected
+                </p>
+              </div>
+            </Card>
         </div>
       )}
 
@@ -404,7 +402,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </div>
         </div>
 
-        {!isRewardActive && (
+        {!isRewardActive && !isBreakOverdue && (
           <div className="hidden md:flex flex-col gap-1 w-48 mx-4">
              <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-primary/60">
                <span>Next Reward In</span>
@@ -415,9 +413,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         )}
 
         {isRewardActive && (
-          <Badge className="animate-pulse bg-emerald-500 text-white border-none gap-2 px-3 py-1">
+          <Badge className="animate-pulse bg-emerald-500 text-white border-none gap-2 px-3 py-1 font-bold">
             <Instagram className="h-3 w-3" />
-            Reward Active: {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
+            Break Active: {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
           </Badge>
         )}
         
@@ -430,42 +428,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
-          
-          {isRewardActive && (
-            <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-               <Card className="max-w-3xl w-full border-emerald-500/20 bg-card/40 flex flex-col overflow-hidden shadow-2xl">
-                 <div className="p-4 border-b border-white/5 bg-emerald-500/10 flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                     <Instagram className="h-6 w-6 text-emerald-400" />
-                     <h2 className="text-xl font-headline font-bold text-emerald-400 uppercase tracking-widest">Focus Break Zone</h2>
-                   </div>
-                   <div className="flex flex-col items-end">
-                     <span className="text-xs font-bold text-emerald-400">{Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')} remaining</span>
-                     <Progress value={rewardProgress} className="w-32 h-1 bg-white/10" />
-                   </div>
-                 </div>
-                 <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6">
-                    <Zap className="h-16 w-16 text-emerald-500 animate-pulse" />
-                    <div className="space-y-2">
-                      <h3 className="text-3xl font-bold font-headline">Break Time!</h3>
-                      <p className="text-muted-foreground">Access your Instagram portal below. This area will automatically <strong>Hard Lock</strong> the study room in {rewardTimeLeft} seconds.</p>
-                    </div>
-                    <Button onClick={handleOpenInstagram} size="lg" className="h-16 px-10 bg-emerald-500 text-white font-bold text-xl hover:bg-emerald-600 rounded-2xl shadow-xl transition-all active:scale-95">
-                       <ExternalLink className="mr-3 h-6 w-6" />
-                       Open Instagram Portal
-                    </Button>
-                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest opacity-40 italic">Note: If on mobile, the Instagram app will open. Return here when the timer ends to resume focus.</p>
-                 </div>
-                 <Button variant="ghost" className="m-4 text-emerald-500/60" onClick={() => {
-                   if (rewardWindowRef.current) rewardWindowRef.current.close();
-                   setIsRewardActive(false);
-                 }}>
-                   Skip & Return to Study
-                 </Button>
-               </Card>
-            </div>
-          )}
-
           <div className="mx-auto max-w-7xl flex flex-col gap-4">
             {pinnedId && (
               <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl">
