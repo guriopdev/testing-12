@@ -55,6 +55,32 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["text", "senderId", "senderName"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "type": "object",
+      "description": "A request to connect with another user.",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderPhoto": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "receiverId", "status"]
+    },
+    "DirectChat": {
+      "title": "DirectChat",
+      "type": "object",
+      "description": "A private 1-on-1 chat.",
+      "properties": {
+        "id": { "type": "string" },
+        "participantIds": { "type": "array", "items": { "type": "string" } },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participantIds"]
     }
   },
   "auth": {
@@ -76,6 +102,18 @@
     "/rooms/{roomId}/messages/{messageId}": {
       "schema": "#/backend/entities/Message",
       "description": "Real-time chat messages."
+    },
+    "/friendRequests/{requestId}": {
+      "schema": "#/backend/entities/FriendRequest",
+      "description": "Friend requests between users."
+    },
+    "/directChats/{chatId}": {
+      "schema": "#/backend/entities/DirectChat",
+      "description": "Private 1-on-1 chats."
+    },
+    "/directChats/{chatId}/messages/{messageId}": {
+      "schema": "#/backend/entities/Message",
+      "description": "Private messages."
     }
   }
 }

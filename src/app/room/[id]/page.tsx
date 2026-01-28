@@ -18,6 +18,8 @@ import {
   ChevronRight,
   Trash2,
   MoreVertical,
+  UserPlus,
+  CheckCircle2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -52,7 +54,7 @@ import {
   deleteDocumentNonBlocking, 
   addDocumentNonBlocking 
 } from '@/firebase';
-import { doc, collection, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { doc, collection, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,6 +102,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     orderBy('timestamp', 'asc')
   ), [db, roomId]);
   const { data: messages } = useCollection(messagesQuery);
+
+  const requestsQuery = useMemoFirebase(() => {
+    if (!user) return null;
+    return query(collection(db, 'friendRequests'), where('senderId', '==', user.uid));
+  }, [user]);
+  const { data: sentRequests } = useCollection(requestsQuery);
 
   const isFull = participants && room && participants.length >= (room.maxParticipants || 10) && !participants.find(p => p.userId === user?.uid);
 
@@ -201,6 +209,32 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
+  const handleSendFriendRequest = (participant: any) => {
+    if (!user) return;
+    
+    const isAlreadySent = sentRequests?.find(r => r.receiverId === participant.userId);
+    if (isAlreadySent) {
+      toast({ title: 'Request already sent' });
+      return;
+    }
+
+    addDocumentNonBlocking(collection(db, 'friendRequests'), {
+      senderId: user.uid,
+      senderName: user.displayName || 'Student',
+      senderPhoto: user.photoURL || '',
+      receiverId: participant.userId,
+      receiverName: participant.name,
+      receiverPhoto: participant.photoUrl,
+      status: 'pending',
+      timestamp: serverTimestamp(),
+    });
+
+    toast({
+      title: 'Friend Request Sent',
+      description: `Request sent to ${participant.name}`,
+    });
+  };
+
   const handleConfirmDelete = () => {
     if (!room || !user || room.creatorId !== user.uid) return;
     deleteDocumentNonBlocking(roomRef);
@@ -219,9 +253,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   if (!room) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
-        <h2 className="text-3xl font-headline font-bold mb-4">Room Closed</h2>
+        <h2 className="text-3xl font-headline font-bold mb-4 text-foreground">Room Closed</h2>
         <p className="text-muted-foreground mb-8">This session has ended.</p>
-        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
+        <Button asChild className="bg-primary text-primary-foreground shadow-lg shadow-primary/20"><Link href="/dashboard">Back to Dashboard</Link></Button>
       </div>
     );
   }
@@ -232,11 +266,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         <div className="h-20 w-20 bg-destructive/10 rounded-full flex items-center justify-center mb-6">
           <Users className="h-10 w-10 text-destructive" />
         </div>
-        <h2 className="text-3xl font-headline font-bold mb-4">Room Full</h2>
+        <h2 className="text-3xl font-headline font-bold mb-4 text-foreground">Room Full</h2>
         <p className="text-muted-foreground mb-8 max-w-sm">
           This session has reached its capacity of {room.maxParticipants} students.
         </p>
-        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
+        <Button asChild className="bg-primary text-primary-foreground shadow-lg shadow-primary/20"><Link href="/dashboard">Back to Dashboard</Link></Button>
       </div>
     );
   }
@@ -250,7 +284,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             <div className="h-16 w-16 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto ring-1 ring-primary/30">
               <Lock className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl font-bold font-headline">{room.name}</h1>
+            <h1 className="text-3xl font-bold font-headline text-foreground">{room.name}</h1>
             <p className="text-muted-foreground">This session is password protected.</p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
@@ -259,13 +293,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               placeholder="Enter Password" 
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              className="h-12 bg-background/50 border-primary/20 text-center tracking-widest text-lg"
+              className="h-12 bg-background/50 border-primary/20 text-center tracking-widest text-lg focus:border-primary"
               autoFocus
             />
             <Button type="submit" className="w-full h-12 text-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity">
               Join Session
             </Button>
-            <Button asChild variant="ghost" className="w-full text-muted-foreground">
+            <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-primary">
               <Link href="/dashboard">Cancel</Link>
             </Button>
           </form>
@@ -280,7 +314,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
       {/* Header */}
-      <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30">
+      <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30 shadow-lg">
         <div className="flex items-center gap-3">
           <Link href="/dashboard">
              <ChevronRight className="h-5 w-5 text-muted-foreground rotate-180 hover:text-primary transition-colors cursor-pointer" />
@@ -302,8 +336,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-card border-primary/20">
-                <DropdownMenuItem onSelect={() => setIsDeleteDialogOpen(true)} className="text-destructive focus:text-destructive cursor-pointer">
+              <DropdownMenuContent align="end" className="bg-card border-primary/20 backdrop-blur-3xl">
+                <DropdownMenuItem onSelect={() => setIsDeleteDialogOpen(true)} className="text-destructive focus:text-destructive cursor-pointer font-bold">
                   <Trash2 className="mr-2 h-4 w-4" />
                   Close Room Forever
                 </DropdownMenuItem>
@@ -320,10 +354,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       </header>
 
       <div className="flex flex-1 overflow-hidden relative">
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
           <div className="mx-auto max-w-7xl grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 content-start">
             {/* My Video Feed */}
-            <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-xl group">
+            <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-2xl group ring-1 ring-primary/5">
               <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
               
               {isCameraOff && (
@@ -347,16 +381,16 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
             {/* Other Participants */}
             {participants?.filter(p => p.userId !== user?.uid).map((p) => (
-              <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/30">
+              <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/40 group ring-1 ring-primary/5">
                 <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/5">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl">
+                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl ring-2 ring-primary/10">
                     <AvatarImage src={p.photoUrl} />
-                    <AvatarFallback className="text-4xl font-headline bg-primary/20 text-primary">{p.name.charAt(0)}</AvatarFallback>
+                    <AvatarFallback className="text-4xl font-headline bg-primary/10 text-primary">{p.name.charAt(0)}</AvatarFallback>
                   </Avatar>
                 </div>
                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
                   <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate">{p.name}</span>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center">
                     {p.isMuted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4 text-primary" />}
                     {p.isCameraOff ? <VideoOff className="h-4 w-4 text-muted-foreground" /> : <Video className="h-4 w-4 text-primary" />}
                   </div>
@@ -367,8 +401,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           
           {hasCameraPermission === false && (
             <div className="mt-8 max-w-md mx-auto">
-              <Alert variant="destructive">
-                <AlertTitle>Camera Access Required</AlertTitle>
+              <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
+                <AlertTitle className="font-headline font-bold">Camera Access Required</AlertTitle>
                 <AlertDescription>
                   Please enable camera and microphone permissions in your browser settings to participate in the video session.
                 </AlertDescription>
@@ -378,7 +412,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </main>
 
         {/* Desktop Sidebar Chat */}
-        <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl">
+        <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
           <div className="p-4 border-b border-primary/10 flex items-center justify-between">
             <h2 className="font-headline font-bold text-xs tracking-widest uppercase text-primary">Live Chat</h2>
             <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{messages?.length || 0}</Badge>
@@ -420,8 +454,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       </div>
 
       {/* Controls Footer */}
-      <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40">
-        <div className="flex items-center gap-4 px-6 py-3 bg-background/50 rounded-full border border-primary/10 shadow-2xl">
+      <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
+        <div className="flex items-center gap-4 px-6 py-3 bg-background/50 rounded-full border border-primary/10 shadow-2xl ring-1 ring-primary/20">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button 
@@ -436,7 +470,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
+            <TooltipContent className="bg-card border-primary/20"><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
           </Tooltip>
           
           <Tooltip>
@@ -453,7 +487,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
+            <TooltipContent className="bg-card border-primary/20"><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
           </Tooltip>
 
           <Separator orientation="vertical" className="h-8 bg-primary/10 mx-2" />
@@ -511,32 +545,59 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <Users className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-sm bg-card/95 border-l border-primary/20" side="right">
+            <SheetContent className="w-full sm:max-w-md bg-card/95 border-l border-primary/20" side="right">
               <SheetHeader className="pb-6">
                 <SheetTitle className="font-headline text-2xl flex items-center gap-2">
                   <Users className="h-6 w-6 text-primary" />
                   Participants ({participants?.length || 0})
                 </SheetTitle>
               </SheetHeader>
-              <div className="flex flex-col gap-3">
-                {participants?.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-primary/5">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10 border border-primary/20">
-                        <AvatarImage src={p.photoUrl} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-sm">{p.name}</span>
-                        {p.userId === user?.uid && <span className="text-[10px] uppercase font-bold text-primary">You</span>}
+              <ScrollArea className="h-full pr-4">
+                <div className="flex flex-col gap-3">
+                  {participants?.map((p) => {
+                    const isSelf = p.userId === user?.uid;
+                    const hasRequest = sentRequests?.find(r => r.receiverId === p.userId);
+
+                    return (
+                      <div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 border border-primary/20 group-hover/p:border-primary/50 transition-all">
+                            <AvatarImage src={p.photoUrl} />
+                            <AvatarFallback className="bg-primary/10 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-sm">{p.name}</span>
+                            {isSelf && <span className="text-[10px] uppercase font-bold text-primary">You</span>}
+                          </div>
+                        </div>
+                        {!isSelf && (
+                          <div className="flex gap-2">
+                            {hasRequest ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" /> Requested
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Request pending</p></TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleSendFriendRequest(p)}
+                                className="h-8 px-2 text-primary hover:bg-primary hover:text-white rounded-lg"
+                              >
+                                <UserPlus className="h-4 w-4 mr-1" /> Add
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div className="flex gap-2 opacity-60">
-                      {p.isMuted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4 text-primary" />}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
             </SheetContent>
           </Sheet>
         </div>
@@ -545,14 +606,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent className="bg-card/95 backdrop-blur-xl border-primary/20">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl font-headline font-bold">End Session?</AlertDialogTitle>
+            <AlertDialogTitle className="text-2xl font-headline font-bold text-foreground">End Session?</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
               This will permanently close the room and disconnect all participants. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="bg-background/50 border-primary/10 hover:bg-primary/10 hover:text-primary">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:opacity-90">
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:opacity-90 shadow-lg shadow-destructive/20">
               Close Forever
             </AlertDialogAction>
           </AlertDialogFooter>
