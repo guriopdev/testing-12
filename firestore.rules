@@ -44,11 +44,9 @@ service cloud.firestore {
     }
 
     match /directChats/{chatId} {
-      // Robust listing and reading for 1-on-1 chats
-      allow list: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
-      allow get: if isSignedIn() && request.auth.uid in resource.data.participantIds;
+      // Robust read/write for 1-on-1 chats
+      allow read, update, delete: if isSignedIn() && request.auth.uid in resource.data.participantIds;
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.participantIds;
-      allow update: if isSignedIn() && request.auth.uid in resource.data.participantIds;
 
       match /messages/{messageId} {
         allow read, create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/directChats/$(chatId)).data.participantIds;

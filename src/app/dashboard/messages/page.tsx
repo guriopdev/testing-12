@@ -12,13 +12,13 @@ export default function MessagesPage() {
   const db = useFirestore();
 
   const chatsQuery = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(
       collection(db, 'directChats'),
       where('participantIds', 'array-contains', user.uid),
       orderBy('updatedAt', 'desc')
     );
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const { data: chats, isLoading } = useCollection(chatsQuery);
 
