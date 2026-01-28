@@ -29,6 +29,7 @@ import {
   Zap,
   Clock,
   ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -63,7 +64,7 @@ import {
   deleteDocumentNonBlocking, 
   addDocumentNonBlocking 
 } from '@/firebase';
-import { doc, collection, serverTimestamp, query, orderBy, where, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, collection, serverTimestamp, query, orderBy, where, getDoc } from 'firebase/firestore';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,7 +85,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // TEST MODE: 4 seconds threshold. Production: 3600 (1 hour).
 const STUDY_THRESHOLD = 4; 
-const REWARD_DURATION = 600; // 10 minutes in seconds
+const REWARD_DURATION = 10; // 10 seconds for quick testing. Production: 600 (10 mins)
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = use(params);
@@ -109,9 +110,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [rewardTimeLeft, setRewardTimeLeft] = useState(0);
   const [isRewardActive, setIsRewardActive] = useState(false);
+  const [isBreakOverdue, setIsBreakOverdue] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rewardWindowRef = useRef<Window | null>(null);
 
   const roomRef = useMemoFirebase(() => doc(db, 'rooms', roomId), [db, roomId]);
   const { data: room, isLoading: isRoomLoading } = useDoc(roomRef);
@@ -139,7 +142,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   const isFull = participants && room && participants.length >= (room.maxParticipants || 10) && !participants.find(p => p.userId === user?.uid);
 
-  // Persistence logic for passwords and active status
   useEffect(() => {
     if (!roomId) return;
     const sessionKey = `room_unlocked_${roomId}`;
@@ -159,13 +161,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         setSessionSeconds((prev) => {
           const next = prev + 1;
           if (next === STUDY_THRESHOLD) {
-            // Escape render cycle for side effects
             setTimeout(() => {
               setIsRewardActive(true);
+              setIsBreakOverdue(false);
               setRewardTimeLeft(REWARD_DURATION);
               toast({
                 title: "Focus Reward Unlocked! 🏆",
-                description: `Deep work complete. Enjoy your 10-minute Instagram break!`,
+                description: `Deep work complete. Enjoy your break!`,
                 className: "bg-primary text-primary-foreground font-bold border-none",
               });
             }, 0);
@@ -177,11 +179,17 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           const next = prev - 1;
           if (next <= 0) {
             setTimeout(() => {
+              // ATTEMPT TO CLOSE WINDOW
+              if (rewardWindowRef.current) {
+                rewardWindowRef.current.close();
+                rewardWindowRef.current = null;
+              }
               setIsRewardActive(false);
+              setIsBreakOverdue(true); // TRIGGER THE LOCK OVERLAY
               setSessionSeconds(0);
               toast({
                 title: "Break Over! 🛑",
-                description: "Reward session finished. Time to re-focus!",
+                description: "Session re-locked. Resume focus immediately.",
                 variant: "destructive",
               });
             }, 0);
@@ -190,9 +198,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           return next;
         });
       }
-
-      // Update Global Leaderboard study time every 60 seconds (scaled for testing if needed)
-      // Note: In real production, we'd check against actual sessionSeconds
     }, 1000);
 
     return () => clearInterval(interval);
@@ -203,16 +208,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
 
     const syncParticipant = async () => {
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      const userData = userSnap.exists() ? userSnap.data() : null;
-
       const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
       setDocumentNonBlocking(participantRef, {
         userId: user.uid,
         name: user.displayName || 'Guest',
-        username: userData?.username || 'anonymous',
-        photoUrl: user.photoURL || '',
         isMuted,
         isCameraOff,
         joinedAt: serverTimestamp(),
@@ -309,49 +308,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
-  const handleSendFriendRequest = async (participant: any) => {
-    if (!user) return;
-    const isAlreadySent = sentRequests?.find(r => r.receiverId === participant.userId);
-    if (isAlreadySent) {
-      toast({ title: 'Request already sent' });
-      return;
-    }
-    const userSnap = await getDoc(doc(db, 'users', user.uid));
-    const myData = userSnap.data();
-    addDocumentNonBlocking(collection(db, 'friendRequests'), {
-      senderId: user.uid,
-      senderName: user.displayName || 'Student',
-      senderUsername: myData?.username || 'student',
-      senderPhoto: user.photoURL || '',
-      receiverId: participant.userId,
-      receiverName: participant.name,
-      receiverUsername: participant.username,
-      receiverPhoto: participant.photoUrl,
-      status: 'pending',
-      timestamp: serverTimestamp(),
-    });
-    toast({
-      title: 'Friend Request Sent',
-      description: `Request sent to @${participant.username}`,
-    });
+  const handleOpenInstagram = () => {
+    const win = window.open('https://instagram.com', '_blank');
+    rewardWindowRef.current = win;
   };
 
-  const handleConfirmDelete = () => {
-    if (!room || !user || room.creatorId !== user.uid) return;
-    deleteDocumentNonBlocking(roomRef);
-    setIsDeleteDialogOpen(false);
-    sessionStorage.removeItem(`room_unlocked_${roomId}`);
-    sessionStorage.removeItem('last_active_room_id');
-    router.push('/dashboard');
-  };
-
-  const handleTogglePin = (id: string) => {
-    setPinnedId(pinnedId === id ? null : id);
-  };
-
-  const handleStartRewardManually = () => {
-    setIsRewardActive(true);
-    setRewardTimeLeft(REWARD_DURATION);
+  const handleResumeStudy = () => {
+    setIsBreakOverdue(false);
+    setSessionSeconds(0);
   };
 
   if (isRoomLoading) {
@@ -366,8 +330,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
         <h2 className="text-3xl font-headline font-bold mb-4 text-foreground">Room Closed</h2>
-        <p className="text-muted-foreground mb-8">This session has ended.</p>
-        <Button asChild className="bg-primary text-primary-foreground shadow-lg shadow-primary/20"><Link href="/dashboard">Back to Dashboard</Link></Button>
+        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
       </div>
     );
   }
@@ -375,14 +338,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   if (isFull) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
-        <div className="h-20 w-20 bg-destructive/10 rounded-full flex items-center justify-center mb-6">
-          <Users className="h-10 w-10 text-destructive" />
-        </div>
+        <Users className="h-16 w-16 text-destructive mb-4" />
         <h2 className="text-3xl font-headline font-bold mb-4 text-foreground">Room Full</h2>
-        <p className="text-muted-foreground mb-8 max-w-sm">
-          This session has reached its capacity of {room.maxParticipants} students.
-        </p>
-        <Button asChild className="bg-primary text-primary-foreground shadow-lg shadow-primary/20"><Link href="/dashboard">Back to Dashboard</Link></Button>
+        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
       </div>
     );
   }
@@ -390,14 +348,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   if (room.password && !isUnlocked) {
     return (
       <div className="flex h-screen items-center justify-center bg-background p-4 relative overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 blur-[120px] rounded-full" />
-        <Card className="w-full max-w-md bg-card/60 backdrop-blur-3xl border-primary/20 p-8 shadow-2xl relative z-10">
+        <Card className="w-full max-w-md bg-card/60 backdrop-blur-3xl border-primary/20 p-8 shadow-2xl z-10">
           <div className="text-center space-y-4 mb-8">
-            <div className="h-16 w-16 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto ring-1 ring-primary/30">
-              <Lock className="h-8 w-8 text-primary" />
-            </div>
+            <Lock className="h-12 w-12 text-primary mx-auto" />
             <h1 className="text-3xl font-bold font-headline text-foreground">{room.name}</h1>
-            <p className="text-muted-foreground">This session is password protected.</p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <input 
@@ -405,15 +359,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               placeholder="Enter Password" 
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              className="h-12 w-full bg-background/50 border border-primary/20 rounded-xl text-center tracking-widest text-lg focus:border-primary focus:outline-none"
+              className="h-12 w-full bg-background/50 border border-primary/20 rounded-xl text-center tracking-widest text-lg"
               autoFocus
             />
-            <Button type="submit" className="w-full h-12 text-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity">
-              Join Session
-            </Button>
-            <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-primary">
-              <Link href="/dashboard">Cancel</Link>
-            </Button>
+            <Button type="submit" className="w-full h-12 text-lg font-bold bg-primary text-primary-foreground">Join Session</Button>
           </form>
         </Card>
       </div>
@@ -428,25 +377,38 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   return (
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
-      <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30 shadow-lg">
+      {/* OVERDUE LOCK OVERLAY */}
+      {isBreakOverdue && (
+        <div className="absolute inset-0 z-[100] bg-background/90 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-500">
+           <Card className="max-w-md w-full border-primary/30 bg-card/60 p-10 text-center space-y-8 shadow-[0_0_100px_rgba(var(--primary),0.2)]">
+              <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto ring-2 ring-primary/20">
+                <ShieldAlert className="h-10 w-10 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-headline font-bold">Focus Mode Locked</h2>
+                <p className="text-muted-foreground">Your social break has expired. Access to the study room is locked until you resume your session.</p>
+              </div>
+              <Button onClick={handleResumeStudy} size="lg" className="w-full h-14 bg-primary text-primary-foreground text-xl font-bold rounded-2xl shadow-xl shadow-primary/20 transition-transform active:scale-95">
+                Resume Study Session
+              </Button>
+           </Card>
+        </div>
+      )}
+
+      <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard">
-             <ChevronRight className="h-5 w-5 text-muted-foreground rotate-180 hover:text-primary transition-colors cursor-pointer" />
-          </Link>
+          <Link href="/dashboard"><ChevronRight className="h-5 w-5 text-muted-foreground rotate-180 hover:text-primary transition-colors" /></Link>
           <div className="flex flex-col">
             <h1 className="text-sm md:text-base font-bold font-headline truncate max-w-[120px] sm:max-w-md">{room.name}</h1>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-primary font-bold uppercase tracking-widest leading-none">{room.topic}</span>
-              <Badge variant="outline" className="text-[9px] h-4 border-primary/30 px-1 py-0">{participants?.length}/{room.maxParticipants}</Badge>
-            </div>
+            <span className="text-[10px] text-primary font-bold uppercase tracking-widest">{room.topic}</span>
           </div>
         </div>
 
         {!isRewardActive && (
           <div className="hidden md:flex flex-col gap-1 w-48 mx-4">
              <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-primary/60">
-               <span>Focus Goal</span>
-               <span>{sessionSeconds}/{STUDY_THRESHOLD}s</span>
+               <span>Next Reward In</span>
+               <span>{Math.max(0, STUDY_THRESHOLD - sessionSeconds)}s</span>
              </div>
              <Progress value={studyProgress} className="h-1.5 bg-primary/10" />
           </div>
@@ -460,64 +422,45 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         )}
         
         <div className="flex items-center gap-2">
-          {isCreator && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
-                  <MoreVertical className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-card border-primary/20 backdrop-blur-3xl">
-                <DropdownMenuItem onSelect={() => setIsDeleteDialogOpen(true)} className="text-destructive focus:text-destructive cursor-pointer font-bold">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Close Room Forever
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Button asChild variant="destructive" size="sm" className="rounded-full px-4 shadow-lg shadow-destructive/20 hover:scale-105 transition-transform">
-            <Link href="/dashboard">
-              <PhoneOff className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Leave</span>
-            </Link>
+          <Button asChild variant="destructive" size="sm" className="rounded-full px-4">
+            <Link href="/dashboard"><PhoneOff className="mr-2 h-4 w-4" /><span className="hidden sm:inline">Leave</span></Link>
           </Button>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden relative">
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5 relative">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
           
           {isRewardActive && (
             <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-               <Card className="max-w-3xl w-full border-emerald-500/20 bg-card/40 flex flex-col overflow-hidden shadow-[0_0_100px_rgba(16,185,129,0.15)]">
+               <Card className="max-w-3xl w-full border-emerald-500/20 bg-card/40 flex flex-col overflow-hidden shadow-2xl">
                  <div className="p-4 border-b border-white/5 bg-emerald-500/10 flex items-center justify-between">
                    <div className="flex items-center gap-3">
                      <Instagram className="h-6 w-6 text-emerald-400" />
                      <h2 className="text-xl font-headline font-bold text-emerald-400 uppercase tracking-widest">Focus Break Zone</h2>
                    </div>
                    <div className="flex flex-col items-end">
-                     <span className="text-xs font-bold font-headline text-emerald-400">{Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}</span>
-                     <Progress value={rewardProgress} className="w-24 h-1 bg-white/10" />
+                     <span className="text-xs font-bold text-emerald-400">{Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')} remaining</span>
+                     <Progress value={rewardProgress} className="w-32 h-1 bg-white/10" />
                    </div>
                  </div>
                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6">
-                    <div className="h-24 w-24 rounded-3xl bg-emerald-500/20 flex items-center justify-center ring-2 ring-emerald-500/30">
-                       <Zap className="h-12 w-12 text-emerald-500 animate-pulse" />
-                    </div>
+                    <Zap className="h-16 w-16 text-emerald-500 animate-pulse" />
                     <div className="space-y-2">
-                      <h3 className="text-3xl font-bold font-headline">Session Complete!</h3>
-                      <p className="text-muted-foreground max-w-md mx-auto">You've unlocked your social break. Since Instagram is highly secure, it will open in a new window for the best experience.</p>
+                      <h3 className="text-3xl font-bold font-headline">Break Time!</h3>
+                      <p className="text-muted-foreground">Access your Instagram portal below. This area will automatically <strong>Hard Lock</strong> the study room in {rewardTimeLeft} seconds.</p>
                     </div>
-                    <Button asChild size="lg" className="h-14 px-8 bg-emerald-500 text-white font-bold text-lg hover:bg-emerald-600 rounded-2xl shadow-xl">
-                       <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">
-                         <ExternalLink className="mr-2 h-5 w-5" />
-                         Open Instagram Portal
-                       </a>
+                    <Button onClick={handleOpenInstagram} size="lg" className="h-16 px-10 bg-emerald-500 text-white font-bold text-xl hover:bg-emerald-600 rounded-2xl shadow-xl transition-all active:scale-95">
+                       <ExternalLink className="mr-3 h-6 w-6" />
+                       Open Instagram Portal
                     </Button>
-                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest opacity-40">This zone will lock automatically when the timer expires.</p>
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest opacity-40 italic">Note: If on mobile, the Instagram app will open. Return here when the timer ends to resume focus.</p>
                  </div>
-                 <Button variant="ghost" className="m-4 text-emerald-500/60 hover:text-emerald-500" onClick={() => setIsRewardActive(false)}>
-                   Skip Reward & Return to Study
+                 <Button variant="ghost" className="m-4 text-emerald-500/60" onClick={() => {
+                   if (rewardWindowRef.current) rewardWindowRef.current.close();
+                   setIsRewardActive(false);
+                 }}>
+                   Skip & Return to Study
                  </Button>
                </Card>
             </div>
@@ -525,100 +468,43 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
           <div className="mx-auto max-w-7xl flex flex-col gap-4">
             {pinnedId && (
-              <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl ring-4 ring-primary/5 animate-fade-in-up">
+              <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl">
                 {pinnedId === user?.uid ? (
                    <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/10">
-                    <Avatar className="h-40 w-40 border-8 border-background shadow-2xl">
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/50">
+                    <Avatar className="h-40 w-40 border-8 border-background">
                       <AvatarImage src={pinnedParticipant?.photoUrl} />
                       <AvatarFallback className="text-7xl font-headline bg-primary/10 text-primary">{pinnedParticipant?.name?.charAt(0)}</AvatarFallback>
                     </Avatar>
                   </div>
                 )}
-                
-                {pinnedId === user?.uid && isCameraOff && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-background">
-                    <Avatar className="h-40 w-40 border-8 border-background shadow-2xl">
-                      <AvatarImage src={user?.photoURL || ''} />
-                      <AvatarFallback className="text-7xl bg-primary text-primary-foreground font-headline">
-                        {user?.displayName?.charAt(0) || '?'}
-                      </AvatarFallback>
-                    </Avatar>
-                  </div>
-                )}
-
-                <div className="absolute top-4 right-4 flex gap-2">
-                  <Button size="icon" variant="secondary" className="rounded-full bg-black/40 backdrop-blur-md border-white/10 hover:bg-black/60" onClick={() => setPinnedId(null)}>
-                    <PinOff className="h-5 w-5" />
-                  </Button>
-                </div>
-
-                <div className="absolute bottom-6 left-6 flex items-center gap-3 bg-black/60 backdrop-blur-xl rounded-2xl p-4 border border-white/10">
-                  <span className="text-lg font-bold text-white tracking-wide uppercase px-2">{pinnedParticipant?.name}</span>
-                  <Badge variant="secondary" className="bg-primary/20 text-primary border-none text-xs">Pinned Session</Badge>
-                </div>
+                <Button size="icon" variant="secondary" className="absolute top-4 right-4 rounded-full" onClick={() => setPinnedId(null)}><PinOff className="h-5 w-5" /></Button>
               </div>
             )}
 
-            <div className={cn(
-              "grid gap-4 content-start",
-              pinnedId ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-            )}>
-              <div className={cn(
-                "relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg group transition-all hover:border-primary/40",
-                pinnedId === user?.uid && "ring-2 ring-primary border-primary/40"
-              )}>
+            <div className={cn("grid gap-4", pinnedId ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+              <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
                 <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", (isCameraOff || pinnedId === user?.uid) && "hidden")} />
-                
                 {(isCameraOff || pinnedId === user?.uid) && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-background">
-                    <Avatar className="h-16 w-16 border-2 border-background shadow-xl">
-                      <AvatarImage src={user?.photoURL || ''} />
-                      <AvatarFallback className="text-2xl bg-primary text-primary-foreground font-headline">
-                        {user?.displayName?.charAt(0) || '?'}
-                      </AvatarFallback>
-                    </Avatar>
-                    {pinnedId === user?.uid && <div className="absolute inset-0 bg-black/20 flex items-center justify-center backdrop-blur-[2px]"><Pin className="h-8 w-8 text-white animate-pulse" /></div>}
+                  <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
+                    <Avatar className="h-16 w-16 border-2 border-background"><AvatarImage src={user?.photoURL || ''} /><AvatarFallback>{user?.displayName?.charAt(0)}</AvatarFallback></Avatar>
                   </div>
                 )}
-
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2">You</span>
-                  <div className="flex gap-2">
-                    <Button size="icon" variant="ghost" className="h-6 w-6 text-white hover:text-primary" onClick={() => handleTogglePin(user?.uid || '')}>
-                      <Pin className={cn("h-3.5 w-3.5", pinnedId === user?.uid && "fill-primary")} />
-                    </Button>
-                    {!isMuted && <div className="h-2 w-2 rounded-full bg-primary animate-ping" />}
-                    {isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
-                  </div>
+                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
+                   <span className="text-[10px] font-bold px-2">You</span>
+                   <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPinnedId(user?.uid || '')}><Pin className="h-3 w-3" /></Button>
                 </div>
               </div>
 
               {participants?.filter(p => p.userId !== user?.uid).map((p) => (
-                <div key={p.id} className={cn(
-                  "relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/40 group ring-1 ring-primary/5",
-                  pinnedId === p.userId && "ring-2 ring-primary border-primary/40"
-                )}>
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/5">
-                    <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl ring-2 ring-primary/10 transition-transform group-hover:scale-105">
-                      <AvatarImage src={p.photoUrl} />
-                      <AvatarFallback className="text-4xl font-headline bg-primary/10 text-primary">{p.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    {pinnedId === p.userId && <div className="absolute inset-0 bg-black/20 flex items-center justify-center backdrop-blur-[2px]"><Pin className="h-8 w-8 text-white animate-pulse" /></div>}
+                <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
+                  <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
+                    <Avatar className="h-20 w-20 border-4 border-background"><AvatarImage src={p.photoUrl} /><AvatarFallback>{p.name.charAt(0)}</AvatarFallback></Avatar>
                   </div>
-                  <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate cursor-pointer" onClick={() => setSelectedParticipant(p)}>{p.name}</span>
-                      <span className="text-[8px] text-primary font-mono px-2">@{p.username}</span>
-                    </div>
-                    <div className="flex gap-1 items-center">
-                      {!p.isMuted && <div className="h-2 w-2 rounded-full bg-primary animate-ping" />}
-                      <Button size="icon" variant="ghost" className="h-6 w-6 text-white hover:text-primary" onClick={() => handleTogglePin(p.userId)}>
-                        <Pin className={cn("h-3 w-3", pinnedId === p.userId && "fill-primary")} />
-                      </Button>
-                      {p.isMuted ? <MicOff className="h-3.5 w-3.5 text-destructive" /> : <Mic className="h-3.5 w-3.5 text-primary" />}
-                    </div>
+                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
+                    <span className="text-[10px] font-bold px-2 truncate">{p.name}</span>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPinnedId(p.userId)}><Pin className="h-3 w-3" /></Button>
                   </div>
                 </div>
               ))}
@@ -626,34 +512,20 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </div>
         </main>
 
-        <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
+        <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-2xl">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
-            <div className="p-2 bg-primary/5">
-              <TabsList className="w-full bg-background/50">
-                <TabsTrigger value="chat" className="flex-1 text-[10px] font-bold uppercase">Chat</TabsTrigger>
-                <TabsTrigger value="rewards" className="flex-1 text-[10px] font-bold uppercase relative">
-                  Rewards
-                  {sessionSeconds >= STUDY_THRESHOLD && <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
-                </TabsTrigger>
-              </TabsList>
-            </div>
+            <TabsList className="m-2 bg-background/50">
+              <TabsTrigger value="chat" className="flex-1 text-[10px] font-bold uppercase">Chat</TabsTrigger>
+              <TabsTrigger value="rewards" className="flex-1 text-[10px] font-bold uppercase">Rewards</TabsTrigger>
+            </TabsList>
 
             <TabsContent value="chat" className="flex-1 flex flex-col m-0 overflow-hidden">
               <ScrollArea className="flex-1 p-4">
                 <div className="flex flex-col gap-4">
                   {messages?.map((msg) => (
                     <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
-                      </div>
-                      <div className={cn(
-                        "px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words shadow-sm",
-                        msg.senderId === user?.uid 
-                          ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
-                          : "bg-secondary text-foreground border border-primary/5 rounded-tl-none"
-                      )}>
-                        {msg.text}
-                      </div>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
+                      <div className={cn("px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words", msg.senderId === user?.uid ? "bg-primary text-primary-foreground" : "bg-secondary")}>{msg.text}</div>
                     </div>
                   ))}
                   <div ref={scrollRef} />
@@ -661,266 +533,47 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               </ScrollArea>
               <div className="p-4 border-t border-primary/10">
                 <form onSubmit={handleSendMessage} className="relative">
-                  <Input 
-                    placeholder="Send a message..." 
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    className="pr-12 bg-background border-primary/20 focus:border-primary rounded-xl h-10"
-                  />
-                  <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-8 w-8 text-primary hover:text-primary/80" disabled={!chatMessage.trim()}>
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  <Input placeholder="Message..." value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} className="bg-background rounded-xl h-10" />
+                  <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-8 w-8 text-primary" disabled={!chatMessage.trim()}><Send className="h-4 w-4" /></Button>
                 </form>
               </div>
             </TabsContent>
 
-            <TabsContent value="rewards" className="flex-1 m-0 overflow-hidden p-4 space-y-6">
-               <div className="space-y-4">
-                 <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
-                       <Zap className="h-4 w-4 text-primary" />
-                    </div>
-                    <h3 className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Focus Tracker</h3>
-                 </div>
-                 
-                 <Card className="bg-background/40 border-primary/10 p-4 space-y-4">
-                    <div className="flex justify-between items-end">
-                       <div>
-                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Next Reward In</p>
-                          <p className="text-xl font-bold font-headline">{Math.max(0, STUDY_THRESHOLD - sessionSeconds)}s</p>
-                       </div>
-                       <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
-                    </div>
-                    <div className="space-y-1">
-                      <Progress value={studyProgress} className="h-2 bg-primary/10" />
-                      <p className="text-[8px] font-bold text-primary/60 uppercase text-right">Progress: {studyProgress.toFixed(0)}%</p>
-                    </div>
-                 </Card>
-
-                 {sessionSeconds >= STUDY_THRESHOLD ? (
-                   <Button className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl animate-bounce" onClick={handleStartRewardManually}>
-                     <Instagram className="mr-2 h-4 w-4" />
-                     Start Reward Break
-                   </Button>
-                 ) : (
-                   <div className="p-4 border border-dashed border-primary/20 rounded-xl text-center space-y-2">
-                     <Lock className="h-4 w-4 text-muted-foreground mx-auto" />
-                     <p className="text-[10px] text-muted-foreground font-bold uppercase">Locked Session</p>
-                   </div>
-                 )}
-               </div>
+            <TabsContent value="rewards" className="flex-1 m-0 p-4 space-y-6">
+               <Card className="bg-background/40 border-primary/10 p-4 space-y-4">
+                  <div className="flex justify-between items-end">
+                     <div>
+                        <p className="text-[10px] font-bold uppercase text-muted-foreground">Reward Progress</p>
+                        <p className="text-xl font-bold font-headline">{studyProgress.toFixed(0)}%</p>
+                     </div>
+                     <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
+                  </div>
+                  <Progress value={studyProgress} className="h-2 bg-primary/10" />
+               </Card>
             </TabsContent>
           </Tabs>
         </aside>
       </div>
 
-      <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
-        <div className="flex items-center gap-4 px-6 py-3 bg-background/50 rounded-full border border-primary/10 shadow-2xl ring-1 ring-primary/20">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant={isMuted ? 'destructive' : 'secondary'} 
-                size="icon" 
-                className={cn(
-                  "rounded-full h-12 w-12 transition-all hover:scale-110",
-                  !isMuted && "bg-primary text-primary-foreground hover:bg-primary/90"
-                )} 
-                onClick={handleMuteToggle}
-              >
-                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="bg-card border-primary/20"><p>{isMuted ? 'Unmute' : 'Mute'}</p></TooltipContent>
-          </Tooltip>
-          
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant={isCameraOff ? 'destructive' : 'secondary'} 
-                size="icon" 
-                className={cn(
-                  "rounded-full h-12 w-12 transition-all hover:scale-110",
-                  !isCameraOff && "bg-primary text-primary-foreground hover:bg-primary/90"
-                )} 
-                onClick={handleCameraToggle}
-              >
-                {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="bg-card border-primary/20"><p>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</p></TooltipContent>
-          </Tooltip>
-
+      <footer className="flex h-20 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40">
+        <div className="flex items-center gap-4">
+          <Button variant={isMuted ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={handleMuteToggle}>
+            {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          </Button>
+          <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={handleCameraToggle}>
+            {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+          </Button>
           <Separator orientation="vertical" className="h-8 bg-primary/10 mx-2" />
-
           <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 lg:hidden hover:text-primary transition-colors">
-                <MessageSquare className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-sm bg-card/95 border-l border-primary/20 p-0 flex flex-col" side="right">
-              <SheetHeader className="p-4 border-b border-primary/10">
-                <SheetTitle className="font-headline flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5 text-primary" />
-                  Room Chat
-                </SheetTitle>
-              </SheetHeader>
-              <ScrollArea className="flex-1 p-4">
-                <div className="flex flex-col gap-4">
-                  {messages?.map((msg) => (
-                    <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
-                      <div className={cn(
-                        "px-3 py-2 rounded-2xl text-sm max-w-[85%] break-words shadow-sm",
-                        msg.senderId === user?.uid ? "bg-primary text-primary-foreground font-medium" : "bg-secondary text-foreground"
-                      )}>
-                        {msg.text}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-              <div className="p-4 border-t border-primary/10 bg-background/50">
-                <form onSubmit={handleSendMessage} className="relative">
-                  <Input 
-                    placeholder="Type a message..." 
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    className="pr-12 h-12 rounded-xl border-primary/20"
-                  />
-                  <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-10 w-10 text-primary">
-                    <Send className="h-5 w-5" />
-                  </Button>
-                </form>
-              </div>
-            </SheetContent>
+            <SheetTrigger asChild><Button variant="ghost" size="icon" className="rounded-full h-12 w-12 lg:hidden"><MessageSquare className="h-5 w-5" /></Button></SheetTrigger>
+            <SheetContent className="bg-card/95"><SheetHeader><SheetTitle>Chat</SheetTitle></SheetHeader></SheetContent>
           </Sheet>
-
           <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 hover:text-primary transition-colors">
-                <Users className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-md bg-card/95 border-l border-primary/20" side="right">
-              <SheetHeader className="pb-6">
-                <SheetTitle className="font-headline text-2xl flex items-center gap-2">
-                  <Users className="h-6 w-6 text-primary" />
-                  Participants ({participants?.length || 0})
-                </SheetTitle>
-              </SheetHeader>
-              <ScrollArea className="h-full pr-4">
-                <div className="flex flex-col gap-3">
-                  {participants?.map((p) => (
-                      <div 
-                        key={p.id} 
-                        className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-all cursor-pointer"
-                        onClick={() => setSelectedParticipant(p)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-10 w-10 border border-primary/20 group-hover/p:border-primary/50 transition-all">
-                            <AvatarImage src={p.photoUrl} />
-                            <AvatarFallback className="bg-primary/10 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-sm">{p.name}</span>
-                              {p.userId === room.creatorId && <Badge variant="outline" className="text-[8px] h-3 px-1 border-primary/40 text-primary">Creator</Badge>}
-                            </div>
-                            <span className="text-[10px] text-primary font-mono lowercase">@{p.username}</span>
-                          </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover/p:opacity-100 transition-all" />
-                      </div>
-                  ))}
-                </div>
-              </ScrollArea>
-              
-              {selectedParticipant && (
-                <div className="absolute inset-0 bg-card z-50 animate-in slide-in-from-right duration-300 flex flex-col p-6 overflow-hidden">
-                  <Button variant="ghost" size="sm" className="w-fit mb-6 text-muted-foreground hover:text-primary" onClick={() => setSelectedParticipant(null)}>
-                    <ChevronRight className="h-4 w-4 rotate-180 mr-2" />
-                    Back to List
-                  </Button>
-                  
-                  <div className="flex flex-col items-center text-center gap-4">
-                    <Avatar className="h-24 w-24 border-4 border-primary/20 shadow-xl ring-2 ring-primary/5">
-                      <AvatarImage src={selectedParticipant.photoUrl} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-3xl font-headline">{selectedParticipant.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="space-y-1">
-                      <h3 className="text-2xl font-bold font-headline text-foreground">{selectedParticipant.name}</h3>
-                      <p className="text-primary font-mono lowercase text-sm">@{selectedParticipant.username}</p>
-                      {selectedUserData?.pronouns && (
-                        <Badge variant="outline" className="mt-1 bg-primary/5 border-primary/20 text-[10px] font-bold uppercase tracking-wider">{selectedUserData.pronouns}</Badge>
-                      )}
-                    </div>
-                  </div>
-
-                  <Separator className="my-6 bg-primary/10" />
-
-                  <ScrollArea className="flex-1 pr-4">
-                    <div className="space-y-6">
-                      {selectedUserData?.country && (
-                        <div className="space-y-1">
-                          <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
-                            <Globe className="h-3 w-3" /> Country / Region
-                          </p>
-                          <p className="text-sm font-medium">{selectedUserData.country}</p>
-                        </div>
-                      )}
-                      <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
-                          <UserCircle className="h-3 w-3" /> Student Bio
-                        </p>
-                        <p className="text-sm leading-relaxed text-muted-foreground italic">
-                          {selectedUserData?.aboutMe || "This student hasn't added a bio to their workspace yet."}
-                        </p>
-                      </div>
-                      {!user || selectedParticipant.userId === user.uid ? null : (
-                        <div className="pt-4 space-y-3">
-                          <Button className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all" onClick={() => handleTogglePin(selectedParticipant.userId)}>
-                            <Pin className="h-4 w-4 mr-2" />
-                            {pinnedId === selectedParticipant.userId ? 'Unpin Video' : 'Pin to Focus'}
-                          </Button>
-                          {sentRequests?.find(r => r.receiverId === selectedParticipant.userId) ? (
-                            <Button disabled className="w-full bg-secondary text-muted-foreground border border-white/5">
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Partner Request Pending
-                            </Button>
-                          ) : (
-                            <Button className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 font-bold" onClick={() => handleSendFriendRequest(selectedParticipant)}>
-                              <UserPlus className="h-4 w-4 mr-2" />
-                              Add Study Partner
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </div>
-              )}
-            </SheetContent>
+            <SheetTrigger asChild><Button variant="ghost" size="icon" className="rounded-full h-12 w-12"><Users className="h-5 w-5" /></Button></SheetTrigger>
+            <SheetContent className="bg-card/95"><SheetHeader><SheetTitle>Participants ({participants?.length || 0})</SheetTitle></SheetHeader></SheetContent>
           </Sheet>
         </div>
       </footer>
-
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="bg-card/95 backdrop-blur-xl border-primary/20">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl font-headline font-bold text-foreground">End Session?</AlertDialogTitle>
-            <AlertDialogDescription className="text-muted-foreground">
-              This will permanently close the room and disconnect all participants. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="bg-background/50 border-primary/10 hover:bg-primary/10 hover:text-primary">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:opacity-90 shadow-lg shadow-destructive/20">
-              Close Forever
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
     </TooltipProvider>
   );
