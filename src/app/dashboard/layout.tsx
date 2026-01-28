@@ -10,8 +10,8 @@ import { LayoutDashboard, Users, MessageSquare, CheckSquare, Clock, Trophy, Vide
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { useUser, useFirestore, useCollection, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -25,6 +25,23 @@ export default function DashboardLayout({
   const db = useFirestore();
 
   const [lastActiveRoom, setLastActiveRoom] = useState<{ id: string; name: string } | null>(null);
+
+  // Heartbeat system to track online status
+  useEffect(() => {
+    if (!user || !db) return;
+
+    const updateHeartbeat = () => {
+      const userRef = doc(db, 'users', user.uid);
+      updateDocumentNonBlocking(userRef, {
+        lastActive: new Date().toISOString()
+      });
+    };
+
+    updateHeartbeat(); // Initial heartbeat
+    const interval = setInterval(updateHeartbeat, 60000); // Every 60 seconds
+
+    return () => clearInterval(interval);
+  }, [user, db]);
 
   useEffect(() => {
     // Check for active session in session storage

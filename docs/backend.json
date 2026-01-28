@@ -14,7 +14,8 @@
         "aboutMe": { "type": "string", "description": "A short bio about the student." },
         "pronouns": { "type": "string", "description": "User's preferred pronouns." },
         "country": { "type": "string", "description": "User's country or region." },
-        "totalStudySeconds": { "type": "number", "default": 0, "description": "Cumulative time spent in study rooms." }
+        "totalStudySeconds": { "type": "number", "default": 0, "description": "Cumulative time spent in study rooms." },
+        "lastActive": { "type": "string", "format": "date-time", "description": "Last time the user was active in the app." }
       },
       "required": ["id", "email", "displayName", "username"]
     },
@@ -52,14 +53,15 @@
     "Message": {
       "title": "Message",
       "type": "object",
-      "description": "A chat message within a room.",
+      "description": "A chat message within a room or direct chat.",
       "properties": {
         "id": { "type": "string" },
         "text": { "type": "string" },
         "senderId": { "type": "string" },
         "senderName": { "type": "string" },
         "senderUsername": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "timestamp": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean", "default": false, "description": "Whether the message has been read by the recipient." }
       },
       "required": ["text", "senderId", "senderName"]
     },

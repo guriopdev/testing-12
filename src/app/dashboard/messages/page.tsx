@@ -2,7 +2,7 @@
 'use client';
 
 import { useUser, useFirestore, useCollection, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, orderBy, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, doc, serverTimestamp, limit } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,6 +10,88 @@ import { Badge } from '@/components/ui/badge';
 import { MessageSquare, Loader2, ArrowRight, User, Sparkles, UserPlus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
+
+function ChatItem({ chat, currentUserId }: { chat: any, currentUserId: string }) {
+  const db = useFirestore();
+  const otherId = chat.participantIds.find((id: string) => id !== currentUserId);
+  const otherUserRef = useMemoFirebase(() => otherId ? doc(db, 'users', otherId) : null, [db, otherId]);
+  const { data: otherUser } = useDoc(otherUserRef);
+
+  const isOnline = otherUser?.lastActive ? (new Date().getTime() - new Date(otherUser.lastActive).getTime() < 300000) : false;
+
+  return (
+    <Link href={`/dashboard/chat/${chat.id}`}>
+      <Card className="bg-card/40 border-primary/10 hover:border-primary/40 transition-all group overflow-hidden hover:shadow-lg hover:shadow-primary/5 backdrop-blur-sm">
+        <CardContent className="flex items-center gap-4 p-4">
+          <div className="relative shrink-0">
+            <Avatar className="h-12 w-12 border border-primary/10 group-hover:border-primary/30 transition-colors">
+              <AvatarImage src={otherUser?.photoUrl} />
+              <AvatarFallback className="bg-primary/5 text-primary"><User className="h-6 w-6" /></AvatarFallback>
+            </Avatar>
+            <div className={cn(
+              "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card",
+              isOnline ? "bg-emerald-500" : "bg-muted-foreground"
+            )} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-base font-headline">{otherUser?.displayName || 'Private Session'}</CardTitle>
+            <CardDescription className="truncate text-[10px] font-medium text-primary/60 uppercase tracking-widest mt-0.5">
+              {chat.lastMessage || 'Continue your study discussion'}
+            </CardDescription>
+          </div>
+          <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+function PartnerItem({ friend, currentUserId, onChat }: { friend: any, currentUserId: string, onChat: (id: string) => void }) {
+  const isSender = friend.senderId === currentUserId;
+  const friendId = isSender ? friend.receiverId : friend.senderId;
+  const friendName = isSender ? friend.receiverName : friend.senderName;
+  const friendPhoto = isSender ? friend.receiverPhoto : friend.senderPhoto;
+  const friendUsername = isSender ? friend.receiverUsername : friend.senderUsername;
+
+  const db = useFirestore();
+  const userRef = useMemoFirebase(() => doc(db, 'users', friendId), [db, friendId]);
+  const { data: userData } = useDoc(userRef);
+
+  const isOnline = userData?.lastActive ? (new Date().getTime() - new Date(userData.lastActive).getTime() < 300000) : false;
+
+  return (
+    <div 
+      className="flex items-center justify-between p-4 border-b border-primary/5 hover:bg-primary/5 transition-colors group cursor-pointer"
+      onClick={() => onChat(friendId)}
+    >
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <Avatar className="h-10 w-10 border border-primary/20">
+            <AvatarImage src={friendPhoto} />
+            <AvatarFallback className="bg-primary/10 text-primary">{friendName?.charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div className={cn(
+            "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-card",
+            isOnline ? "bg-emerald-500" : "bg-muted-foreground"
+          )} />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm font-bold flex items-center gap-2">
+            {friendName}
+            {isOnline && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+          </span>
+          <span className="text-[10px] text-primary font-mono lowercase">@{friendUsername}</span>
+        </div>
+      </div>
+      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground group-hover:text-primary opacity-0 group-hover:opacity-100 transition-all">
+        <MessageSquare className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+import { useDoc } from '@/firebase';
 
 export default function MessagesPage() {
   const { user } = useUser();
@@ -84,22 +166,7 @@ export default function MessagesPage() {
           ) : chats && chats.length > 0 ? (
             <div className="grid gap-3">
               {chats.map((chat) => (
-                <Link key={chat.id} href={`/dashboard/chat/${chat.id}`}>
-                  <Card className="bg-card/40 border-primary/10 hover:border-primary/40 transition-all group overflow-hidden hover:shadow-lg hover:shadow-primary/5 backdrop-blur-sm">
-                    <CardContent className="flex items-center gap-4 p-4">
-                      <div className="h-12 w-12 rounded-xl bg-primary/5 flex items-center justify-center shrink-0 border border-primary/10 group-hover:bg-primary/10 transition-colors">
-                        <User className="h-6 w-6 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <CardTitle className="text-base font-headline">Private Session</CardTitle>
-                        <CardDescription className="truncate text-[10px] font-medium text-primary/60 uppercase tracking-widest mt-0.5">
-                          {chat.lastMessage || 'Continue your study discussion'}
-                        </CardDescription>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                    </CardContent>
-                  </Card>
-                </Link>
+                <ChatItem key={chat.id} chat={chat} currentUserId={user?.uid || ''} />
               ))}
             </div>
           ) : (
@@ -138,37 +205,9 @@ export default function MessagesPage() {
                 </div>
               </div>
               <div className="max-h-[500px] overflow-y-auto">
-                {friends.length > 0 ? friends.map((f) => {
-                  const isSender = f.senderId === user?.uid;
-                  const friendName = isSender ? f.receiverName : f.senderName;
-                  const friendId = isSender ? f.receiverId : f.senderId;
-                  const friendPhoto = isSender ? f.receiverPhoto : f.senderPhoto;
-                  const friendUsername = isSender ? f.receiverUsername : f.senderUsername;
-
-                  return (
-                    <div 
-                      key={f.id} 
-                      className="flex items-center justify-between p-4 border-b border-primary/5 hover:bg-primary/5 transition-colors group cursor-pointer"
-                      onClick={() => handleStartChat(friendId)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <Avatar className="h-10 w-10 border border-primary/20">
-                            <AvatarImage src={friendPhoto} />
-                            <AvatarFallback className="bg-primary/10 text-primary">{friendName?.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold">{friendName}</span>
-                          <span className="text-[10px] text-primary font-mono lowercase">@{friendUsername}</span>
-                        </div>
-                      </div>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground group-hover:text-primary opacity-0 group-hover:opacity-100 transition-all">
-                        <MessageSquare className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  );
-                }) : (
+                {friends.length > 0 ? friends.map((f) => (
+                  <PartnerItem key={f.id} friend={f} currentUserId={user?.uid || ''} onChat={handleStartChat} />
+                )) : (
                   <div className="p-8 text-center">
                     <p className="text-xs text-muted-foreground">Add partners in the Social tab to start chatting.</p>
                     <Button asChild variant="link" size="sm" className="mt-2 text-primary font-bold">
