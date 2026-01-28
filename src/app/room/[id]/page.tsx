@@ -20,7 +20,9 @@ import {
   MoreVertical,
   UserPlus,
   CheckCircle2,
-  AtSign,
+  Globe,
+  UserCircle,
+  Info,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -89,6 +91,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +113,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return query(collection(db, 'friendRequests'), where('senderId', '==', user.uid));
   }, [user]);
   const { data: sentRequests } = useCollection(requestsQuery);
+
+  // Fetch full user data for the selected participant to show bio etc.
+  const selectedUserRef = useMemoFirebase(() => {
+    if (!db || !selectedParticipant) return null;
+    return doc(db, 'users', selectedParticipant.userId);
+  }, [db, selectedParticipant]);
+  const { data: selectedUserData } = useDoc(selectedUserRef);
 
   const isFull = participants && room && participants.length >= (room.maxParticipants || 10) && !participants.find(p => p.userId === user?.uid);
 
@@ -577,7 +588,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     const hasRequest = sentRequests?.find(r => r.receiverId === p.userId);
 
                     return (
-                      <div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-all">
+                      <div 
+                        key={p.id} 
+                        className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-all cursor-pointer"
+                        onClick={() => setSelectedParticipant(p)}
+                      >
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border border-primary/20 group-hover/p:border-primary/50 transition-all">
                             <AvatarImage src={p.photoUrl} />
@@ -586,37 +601,78 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                           <div className="flex flex-col">
                             <span className="font-semibold text-sm">{p.name}</span>
                             <span className="text-[10px] text-primary font-mono">@{p.username}</span>
-                            {isSelf && <span className="text-[10px] uppercase font-bold text-muted-foreground">You</span>}
                           </div>
                         </div>
-                        {!isSelf && (
-                          <div className="flex gap-2">
-                            {hasRequest ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                                    <CheckCircle2 className="h-3 w-3 mr-1" /> Sent
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent><p>Request pending</p></TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => handleSendFriendRequest(p)}
-                                className="h-8 px-3 text-primary bg-primary/5 hover:bg-primary hover:text-white rounded-lg transition-all"
-                              >
-                                <UserPlus className="h-4 w-4 mr-1" /> Add
-                              </Button>
-                            )}
-                          </div>
-                        )}
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover/p:opacity-100 transition-all" />
                       </div>
                     );
                   })}
                 </div>
               </ScrollArea>
+              
+              {/* Mini Profile / Friend Request View */}
+              {selectedParticipant && (
+                <div className="absolute inset-0 bg-card z-50 animate-in slide-in-from-right duration-300 flex flex-col p-6">
+                  <Button variant="ghost" size="sm" className="w-fit mb-6" onClick={() => setSelectedParticipant(null)}>
+                    <ChevronRight className="h-4 w-4 rotate-180 mr-2" />
+                    Back to List
+                  </Button>
+                  
+                  <div className="flex flex-col items-center text-center gap-4">
+                    <Avatar className="h-24 w-24 border-4 border-primary/20 shadow-xl">
+                      <AvatarImage src={selectedParticipant.photoUrl} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-3xl font-headline">{selectedParticipant.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="space-y-1">
+                      <h3 className="text-2xl font-bold font-headline">{selectedParticipant.name}</h3>
+                      <p className="text-primary font-mono lowercase">@{selectedParticipant.username}</p>
+                      {selectedUserData?.pronouns && (
+                        <Badge variant="outline" className="mt-1 bg-primary/5 border-primary/20">{selectedUserData.pronouns}</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  <Separator className="my-6 bg-primary/10" />
+
+                  <ScrollArea className="flex-1 pr-4">
+                    <div className="space-y-6">
+                      {selectedUserData?.country && (
+                        <div className="space-y-1">
+                          <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
+                            <Globe className="h-3 w-3" /> Origin
+                          </p>
+                          <p className="text-sm font-medium">{selectedUserData.country}</p>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
+                          <UserCircle className="h-3 w-3" /> About Me
+                        </p>
+                        <p className="text-sm leading-relaxed text-muted-foreground italic">
+                          {selectedUserData?.aboutMe || "This student hasn't written a bio yet."}
+                        </p>
+                      </div>
+                      
+                      {!user || selectedParticipant.userId === user.uid ? null : (
+                        <div className="pt-4">
+                          {sentRequests?.find(r => r.receiverId === selectedParticipant.userId) ? (
+                            <Button disabled className="w-full bg-primary/20 text-primary border border-primary/30">
+                              <CheckCircle2 className="h-4 w-4 mr-2" />
+                              Request Pending
+                            </Button>
+                          ) : (
+                            <Button className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20" onClick={() => handleSendFriendRequest(selectedParticipant)}>
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              Add Study Partner
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
             </SheetContent>
           </Sheet>
         </div>

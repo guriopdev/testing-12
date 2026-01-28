@@ -10,7 +10,10 @@
         "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
         "username": { "type": "string", "description": "Unique student handle." },
-        "photoUrl": { "type": "string", "format": "uri" }
+        "photoUrl": { "type": "string", "format": "uri" },
+        "aboutMe": { "type": "string", "description": "A short bio about the student." },
+        "pronouns": { "type": "string", "description": "User's preferred pronouns." },
+        "country": { "type": "string", "description": "User's country or region." }
       },
       "required": ["id", "email", "displayName", "username"]
     },
