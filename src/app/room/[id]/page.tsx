@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useRef, use } from 'react';
-import Link from 'next/navigation';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Mic,
@@ -137,11 +137,15 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           if (next >= STUDY_THRESHOLD) {
             setIsRewardActive(true);
             setRewardTimeLeft(REWARD_DURATION);
-            toast({
-              title: "Break Zone Unlocked!",
-              description: `Enjoy your earned social break. Protocol active.`,
-              className: "bg-emerald-500 text-white font-bold border-none",
-            });
+            
+            // Side effect outside of state update per React guidelines
+            setTimeout(() => {
+              toast({
+                title: "Break Zone Unlocked!",
+                description: `Enjoy your earned social break. Protocol active.`,
+                className: "bg-emerald-500 text-white font-bold border-none",
+              });
+            }, 0);
           }
           return next;
         });
@@ -158,11 +162,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             // Visual notification in the background
             document.title = "⚠️ RETURN TO FOCUS";
             
-            toast({
-              title: "BREAK EXPIRED!",
-              description: "Room is now LOCKED. Return immediately.",
-              variant: "destructive",
-            });
+            setTimeout(() => {
+              toast({
+                title: "BREAK EXPIRED!",
+                description: "Room is now LOCKED. Return immediately.",
+                variant: "destructive",
+              });
+            }, 0);
             return 0;
           }
           return next;
@@ -316,7 +322,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-background text-center p-4">
         <h2 className="text-3xl font-headline font-bold mb-4 text-foreground">Room Closed</h2>
-        <Button asChild className="bg-primary text-primary-foreground"><Link href="/dashboard">Back to Dashboard</Link></Button>
+        <Button asChild className="bg-primary text-primary-foreground">
+          <Link href="/dashboard">Back to Dashboard</Link>
+        </Button>
       </div>
     );
   }
@@ -608,4 +616,3 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     </TooltipProvider>
   );
 }
-
