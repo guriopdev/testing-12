@@ -32,8 +32,12 @@ export default function Home() {
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      // Silently handle common popup issues without crashing
-      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+      // Silently handle common popup issues without crashing or showing intrusive alerts
+      if (
+        error.code === 'auth/popup-closed-by-user' || 
+        error.code === 'auth/cancelled-popup-request' ||
+        error.code === 'auth/user-cancelled'
+      ) {
         return;
       }
 
