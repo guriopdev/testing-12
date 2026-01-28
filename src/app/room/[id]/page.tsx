@@ -24,6 +24,11 @@ import {
   UserCircle,
   Pin,
   PinOff,
+  Instagram,
+  Trophy,
+  Zap,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -48,6 +53,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import { 
   useDoc, 
   useCollection, 
@@ -75,6 +81,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+const STUDY_THRESHOLD = 3600; // 1 hour in seconds
+const REWARD_DURATION = 600; // 10 minutes in seconds
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = use(params);
@@ -94,6 +104,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  
+  // Reward System State
+  const [sessionSeconds, setSessionSeconds] = useState(0);
+  const [rewardTimeLeft, setRewardTimeLeft] = useState(0);
+  const [isRewardActive, setIsRewardActive] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -127,36 +142,60 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   // Persistence logic for passwords and active status
   useEffect(() => {
     if (!roomId) return;
-    
-    // Check session storage for existing unlock
     const sessionKey = `room_unlocked_${roomId}`;
     if (sessionStorage.getItem(sessionKey) === 'true') {
       setIsUnlocked(true);
     }
-    
-    // Mark as the current active session for the layout banner
     sessionStorage.setItem('last_active_room_id', roomId);
     if (room?.name) sessionStorage.setItem('last_active_room_name', room.name);
-
-    return () => {
-      // Clear active room ID when leaving (it survives navigation but can be cleared if needed)
-      // We keep it so the dashboard banner can show "Resume Session"
-    };
   }, [roomId, room?.name]);
 
-  // STUDY TIME TRACKER: Increment user study time every 60 seconds
+  // TRACKING: Study Cycle and Reward logic
   useEffect(() => {
     if (!user || !db || (room?.password && !isUnlocked) || isFull) return;
 
     const interval = setInterval(() => {
-      const userRef = doc(db, 'users', user.uid);
-      updateDoc(userRef, {
-        totalStudySeconds: increment(60)
-      }).catch(err => console.error("Failed to update study time:", err));
-    }, 60000);
+      // 1. Accumulate session time for rewards if not currently on break
+      if (!isRewardActive) {
+        setSessionSeconds(prev => {
+          const next = prev + 1;
+          if (next === STUDY_THRESHOLD) {
+            toast({
+              title: "Focus Reward Unlocked! 🏆",
+              description: "You've studied for 1 hour. You've earned a 10-minute break!",
+              className: "bg-primary text-primary-foreground font-bold",
+            });
+          }
+          return next;
+        });
+      } else {
+        // 2. Decrement reward time if break is active
+        setRewardTimeLeft(prev => {
+          if (prev <= 1) {
+            setIsRewardActive(false);
+            setSessionSeconds(0); // Reset for next cycle
+            toast({
+              title: "Break Over! 🛑",
+              description: "Reward time finished. Time to get back to studying!",
+              variant: "destructive",
+            });
+            return 0;
+          }
+          return prev - 1;
+        });
+      }
+
+      // 3. Update Global Leaderboard study time every 60 seconds
+      if (sessionSeconds % 60 === 0 && sessionSeconds > 0) {
+        const userRef = doc(db, 'users', user.uid);
+        updateDoc(userRef, {
+          totalStudySeconds: increment(60)
+        }).catch(err => console.error("Failed to update study time:", err));
+      }
+    }, 1000);
 
     return () => clearInterval(interval);
-  }, [user, db, room?.password, isUnlocked, isFull]);
+  }, [user, db, room?.password, isUnlocked, isFull, isRewardActive, sessionSeconds]);
 
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
@@ -268,16 +307,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   const handleSendFriendRequest = async (participant: any) => {
     if (!user) return;
-    
     const isAlreadySent = sentRequests?.find(r => r.receiverId === participant.userId);
     if (isAlreadySent) {
       toast({ title: 'Request already sent' });
       return;
     }
-
     const userSnap = await getDoc(doc(db, 'users', user.uid));
     const myData = userSnap.data();
-
     addDocumentNonBlocking(collection(db, 'friendRequests'), {
       senderId: user.uid,
       senderName: user.displayName || 'Student',
@@ -290,7 +326,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       status: 'pending',
       timestamp: serverTimestamp(),
     });
-
     toast({
       title: 'Friend Request Sent',
       description: `Request sent to @${participant.username}`,
@@ -308,6 +343,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   const handleTogglePin = (id: string) => {
     setPinnedId(pinnedId === id ? null : id);
+  };
+
+  const handleStartReward = () => {
+    setIsRewardActive(true);
+    setRewardTimeLeft(REWARD_DURATION);
   };
 
   if (isRoomLoading) {
@@ -378,6 +418,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   const isCreator = user?.uid === room.creatorId;
   const pinnedParticipant = participants?.find(p => p.userId === pinnedId) || (pinnedId === user?.uid ? { userId: user?.uid, name: 'You', photoUrl: user?.photoURL || '' } : null);
+  const studyProgress = Math.min((sessionSeconds / STUDY_THRESHOLD) * 100, 100);
+  const rewardProgress = (rewardTimeLeft / REWARD_DURATION) * 100;
 
   return (
     <TooltipProvider>
@@ -395,6 +437,24 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </div>
           </div>
         </div>
+
+        {/* Focus Tracker Bar in Header */}
+        {!isRewardActive && (
+          <div className="hidden md:flex flex-col gap-1 w-48 mx-4">
+             <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-primary/60">
+               <span>Focus Goal</span>
+               <span>{Math.floor(sessionSeconds / 60)}/60 min</span>
+             </div>
+             <Progress value={studyProgress} className="h-1.5 bg-primary/10" />
+          </div>
+        )}
+
+        {isRewardActive && (
+          <Badge className="animate-pulse bg-emerald-500 text-white border-none gap-2 px-3 py-1">
+            <Instagram className="h-3 w-3" />
+            Reward Active: {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
+          </Badge>
+        )}
         
         <div className="flex items-center gap-2">
           {isCreator && (
@@ -422,7 +482,45 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       </header>
 
       <div className="flex flex-1 overflow-hidden relative">
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5 relative">
+          
+          {/* REWARD OVERLAY SECTION */}
+          {isRewardActive && (
+            <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+               <Card className="max-w-4xl w-full h-full max-h-[85vh] border-emerald-500/20 bg-card/40 flex flex-col overflow-hidden shadow-[0_0_100px_rgba(16,185,129,0.1)]">
+                 <div className="p-4 border-b border-white/5 bg-emerald-500/10 flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                     <Instagram className="h-6 w-6 text-emerald-400" />
+                     <h2 className="text-xl font-headline font-bold text-emerald-400 uppercase tracking-widest">Focus Break: Reward Zone</h2>
+                   </div>
+                   <div className="flex flex-col items-end">
+                     <span className="text-xs font-bold font-headline text-emerald-400">{Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}</span>
+                     <Progress value={rewardProgress} className="w-24 h-1 bg-white/10" />
+                   </div>
+                 </div>
+                 <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6">
+                    <div className="h-24 w-24 rounded-3xl bg-emerald-500/20 flex items-center justify-center ring-2 ring-emerald-500/30">
+                       <Zap className="h-12 w-12 text-emerald-500 animate-pulse" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-3xl font-bold font-headline">Study Hard, Play Hard.</h3>
+                      <p className="text-muted-foreground max-w-md mx-auto">You've unlocked your 10-minute Instagram session. Since external sites are strictly protected, use the link below to open a reward window, or relax until the session resets.</p>
+                    </div>
+                    <Button asChild size="lg" className="h-14 px-8 bg-emerald-500 text-white font-bold text-lg hover:bg-emerald-600 rounded-2xl">
+                       <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">
+                         <ExternalLink className="mr-2 h-5 w-5" />
+                         Open Instagram Portal
+                       </a>
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest opacity-40">Section will be blocked automatically when timer ends</p>
+                 </div>
+                 <Button variant="ghost" className="m-4 text-emerald-500/60 hover:text-emerald-500" onClick={() => setIsRewardActive(false)}>
+                   Skip Reward & Get Back to Work
+                 </Button>
+               </Card>
+            </div>
+          )}
+
           <div className="mx-auto max-w-7xl flex flex-col gap-4">
             {pinnedId && (
               <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl ring-4 ring-primary/5 animate-fade-in-up">
@@ -524,60 +622,107 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               ))}
             </div>
           </div>
-          
-          {hasCameraPermission === false && (
-            <div className="mt-8 max-w-md mx-auto">
-              <Alert variant="destructive" className="bg-destructive/10 border-destructive/20">
-                <AlertTitle className="font-headline font-bold">Camera Access Required</AlertTitle>
-                <AlertDescription>
-                  Please enable camera and microphone permissions in your browser settings to participate in the video session.
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
         </main>
 
         <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
-          <div className="p-4 border-b border-primary/10 flex items-center justify-between">
-            <h2 className="font-headline font-bold text-xs tracking-widest uppercase text-primary">Live Chat</h2>
-            <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{messages?.length || 0}</Badge>
-          </div>
-          
-          <ScrollArea className="flex-1 p-4">
-            <div className="flex flex-col gap-4">
-              {messages?.map((msg) => (
-                <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
-                    <span className="text-[8px] text-primary/40 font-mono lowercase">@{msg.senderUsername}</span>
-                  </div>
-                  <div className={cn(
-                    "px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words shadow-sm",
-                    msg.senderId === user?.uid 
-                      ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
-                      : "bg-secondary text-foreground border border-primary/5 rounded-tl-none"
-                  )}>
-                    {msg.text}
-                  </div>
-                </div>
-              ))}
-              <div ref={scrollRef} />
+          <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
+            <div className="p-2 bg-primary/5">
+              <TabsList className="w-full bg-background/50">
+                <TabsTrigger value="chat" className="flex-1 text-[10px] font-bold uppercase">Chat</TabsTrigger>
+                <TabsTrigger value="rewards" className="flex-1 text-[10px] font-bold uppercase relative">
+                  Rewards
+                  {sessionSeconds >= STUDY_THRESHOLD && <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
+                </TabsTrigger>
+              </TabsList>
             </div>
-          </ScrollArea>
 
-          <div className="p-4 border-t border-primary/10">
-            <form onSubmit={handleSendMessage} className="relative">
-              <Input 
-                placeholder="Send a message..." 
-                value={chatMessage}
-                onChange={(e) => setChatMessage(e.target.value)}
-                className="pr-12 bg-background border-primary/20 focus:border-primary rounded-xl h-10"
-              />
-              <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-8 w-8 text-primary hover:text-primary/80" disabled={!chatMessage.trim()}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </form>
-          </div>
+            <TabsContent value="chat" className="flex-1 flex flex-col m-0 overflow-hidden">
+              <ScrollArea className="flex-1 p-4">
+                <div className="flex flex-col gap-4">
+                  {messages?.map((msg) => (
+                    <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
+                      </div>
+                      <div className={cn(
+                        "px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words shadow-sm",
+                        msg.senderId === user?.uid 
+                          ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
+                          : "bg-secondary text-foreground border border-primary/5 rounded-tl-none"
+                      )}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={scrollRef} />
+                </div>
+              </ScrollArea>
+              <div className="p-4 border-t border-primary/10">
+                <form onSubmit={handleSendMessage} className="relative">
+                  <Input 
+                    placeholder="Send a message..." 
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    className="pr-12 bg-background border-primary/20 focus:border-primary rounded-xl h-10"
+                  />
+                  <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-8 w-8 text-primary hover:text-primary/80" disabled={!chatMessage.trim()}>
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </form>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="rewards" className="flex-1 m-0 overflow-hidden p-4 space-y-6">
+               <div className="space-y-4">
+                 <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
+                       <Zap className="h-4 w-4 text-primary" />
+                    </div>
+                    <h3 className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Focus Tracker</h3>
+                 </div>
+                 
+                 <Card className="bg-background/40 border-primary/10 p-4 space-y-4">
+                    <div className="flex justify-between items-end">
+                       <div>
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Next Reward In</p>
+                          <p className="text-xl font-bold font-headline">{Math.floor((STUDY_THRESHOLD - sessionSeconds) / 60)} min</p>
+                       </div>
+                       <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
+                    </div>
+                    <div className="space-y-1">
+                      <Progress value={studyProgress} className="h-2 bg-primary/10" />
+                      <p className="text-[8px] font-bold text-primary/60 uppercase text-right">Progress: {studyProgress.toFixed(0)}%</p>
+                    </div>
+                 </Card>
+
+                 <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Reward Mechanics</p>
+                    <div className="flex flex-col gap-2">
+                       <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
+                          <span>Complete 1 hour of study to earn break.</span>
+                       </div>
+                       <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
+                          <span>10 minutes of social access per session.</span>
+                       </div>
+                    </div>
+                 </div>
+
+                 {sessionSeconds >= STUDY_THRESHOLD ? (
+                   <Button className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl animate-bounce" onClick={handleStartReward}>
+                     <Instagram className="mr-2 h-4 w-4" />
+                     Start Reward Break
+                   </Button>
+                 ) : (
+                   <Button disabled className="w-full h-12 bg-primary/10 border border-primary/10 text-muted-foreground font-bold rounded-xl opacity-50">
+                     <Lock className="mr-2 h-4 w-4" />
+                     Locked: Study {Math.floor((STUDY_THRESHOLD - sessionSeconds) / 60)}m More
+                   </Button>
+                 )}
+               </div>
+            </TabsContent>
+          </Tabs>
         </aside>
       </div>
 
@@ -645,7 +790,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       </div>
                     </div>
                   ))}
-                  <div ref={scrollRef} />
                 </div>
               </ScrollArea>
               <div className="p-4 border-t border-primary/10 bg-background/50">
@@ -737,7 +881,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                           <p className="text-sm font-medium">{selectedUserData.country}</p>
                         </div>
                       )}
-
                       <div className="space-y-1">
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
                           <UserCircle className="h-3 w-3" /> Student Bio
@@ -746,14 +889,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                           {selectedUserData?.aboutMe || "This student hasn't added a bio to their workspace yet."}
                         </p>
                       </div>
-                      
                       {!user || selectedParticipant.userId === user.uid ? null : (
                         <div className="pt-4 space-y-3">
                           <Button className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all" onClick={() => handleTogglePin(selectedParticipant.userId)}>
                             <Pin className="h-4 w-4 mr-2" />
                             {pinnedId === selectedParticipant.userId ? 'Unpin Video' : 'Pin to Focus'}
                           </Button>
-
                           {sentRequests?.find(r => r.receiverId === selectedParticipant.userId) ? (
                             <Button disabled className="w-full bg-secondary text-muted-foreground border border-white/5">
                               <CheckCircle2 className="h-4 w-4 mr-2" />
