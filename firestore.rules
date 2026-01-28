@@ -43,13 +43,14 @@ service cloud.firestore {
     }
 
     match /directChats/{chatId} {
-      // Robust participant validation for private conversations
-      allow read: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
-      allow create: if isSignedIn() && (request.auth.uid in request.resource.data.participantIds);
-      allow update, delete: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
+      // Use hasAny for robust participant validation in list queries
+      allow read: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
+      allow create: if isSignedIn() && request.resource.data.participantIds.hasAny([request.auth.uid]);
+      allow update: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
+      allow delete: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
 
       match /messages/{messageId} {
-        allow read, create: if isSignedIn() && (request.auth.uid in get(/databases/$(database)/documents/directChats/$(chatId)).data.participantIds);
+        allow read, create: if isSignedIn() && get(/databases/$(database)/documents/directChats/$(chatId)).data.participantIds.hasAny([request.auth.uid]);
       }
     }
   }

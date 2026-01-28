@@ -13,7 +13,7 @@ export default function MessagesPage() {
 
   const chatsQuery = useMemoFirebase(() => {
     if (!db || !user?.uid) return null;
-    // Filter by participantIds array-contains to match security rules
+    // Filter by participantIds to match security rules
     return query(
       collection(db, 'directChats'),
       where('participantIds', 'array-contains', user.uid),

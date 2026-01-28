@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Chrome, Loader2, Sparkles } from 'lucide-react';
+import { Chrome, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { useAuth, useUser } from '@/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -23,22 +23,27 @@ export default function Home() {
   }, [user, router]);
 
   const handleGoogleSignIn = async () => {
+    if (!auth) return;
+
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      // Silently handle the case where user closes the popup
+      // Handle the case where user closes the popup or common environment issues
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
         return;
       }
 
       let message = 'Could not complete sign in. Please try again.';
-      if (error.code === 'auth/operation-not-allowed') {
-        message = 'Google sign-in is not enabled in Firebase Console.';
+      
+      if (error.code === 'auth/unauthorized-domain') {
+        message = 'This domain is not authorized for login. Please check your Firebase Console settings.';
       } else if (error.code === 'auth/popup-blocked') {
-        message = 'Popup was blocked by your browser. Please allow popups for this site.';
+        message = 'Sign-in popup was blocked. Please allow popups for this site in your browser settings.';
+      } else if (error.code === 'auth/operation-not-allowed') {
+        message = 'Google sign-in is not enabled in the Firebase Console.';
       }
 
       toast({
@@ -46,6 +51,7 @@ export default function Home() {
         title: 'Sign In Error',
         description: message,
       });
+      console.error('Auth Error:', error);
     }
   };
 
@@ -84,14 +90,14 @@ export default function Home() {
             
             <div className="flex items-center gap-2 justify-center py-2">
               <Sparkles className="h-4 w-4 text-primary animate-pulse" />
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Secure University Portal</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Secure Student Workspace</span>
               <Sparkles className="h-4 w-4 text-primary animate-pulse" />
             </div>
           </div>
 
           <div className="text-center space-y-4">
             <p className="text-xs text-muted-foreground leading-relaxed px-4">
-              By joining, you agree to our Study Code of Conduct. Keep it respectful and productive.
+              If login doesn't work in a new window, ensure popups are allowed and the domain is authorized in Firebase.
             </p>
           </div>
         </CardContent>
