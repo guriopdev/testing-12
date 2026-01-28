@@ -4,7 +4,7 @@
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { MessageSquare, Loader2, ArrowRight } from 'lucide-react';
+import { MessageSquare, Loader2, ArrowRight, User } from 'lucide-react';
 import Link from 'next/link';
 
 export default function MessagesPage() {
@@ -40,12 +40,12 @@ export default function MessagesPage() {
               <Card className="bg-card/40 border-primary/10 hover:border-primary/40 transition-all group overflow-hidden">
                 <CardContent className="flex items-center gap-4 p-4">
                   <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
-                    <MessageSquare className="h-6 w-6 text-primary" />
+                    <User className="h-6 w-6 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg">Private Chat</CardTitle>
-                    <CardDescription className="truncate text-xs font-mono text-primary/60">
-                      ID: {chat.id}
+                    <CardTitle className="text-lg">Private Conversation</CardTitle>
+                    <CardDescription className="truncate text-[10px] font-mono text-primary/60 uppercase tracking-widest">
+                      Stable Channel
                     </CardDescription>
                   </div>
                   <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
@@ -59,7 +59,7 @@ export default function MessagesPage() {
           <MessageSquare className="h-12 w-12 text-primary/20 mx-auto mb-4" />
           <p className="text-muted-foreground font-medium">No active conversations yet.</p>
           <Link href="/dashboard/friends" className="text-primary font-bold hover:underline mt-2 inline-block">
-            Go to Friends Hub
+            Connect with friends to start chatting
           </Link>
         </div>
       )}
