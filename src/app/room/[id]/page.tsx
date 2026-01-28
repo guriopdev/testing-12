@@ -52,7 +52,6 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { 
   useDoc, 
@@ -158,32 +157,30 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     const interval = setInterval(() => {
       // 1. Accumulate session time for rewards if not currently on break
       if (!isRewardActive) {
-        setSessionSeconds(prev => {
-          const next = prev + 1;
-          if (next === STUDY_THRESHOLD) {
-            toast({
-              title: "Focus Reward Unlocked! 🏆",
-              description: `You've studied for the set threshold. You've earned a 10-minute break!`,
-              className: "bg-primary text-primary-foreground font-bold",
-            });
-          }
-          return next;
-        });
+        const nextStudyTime = sessionSeconds + 1;
+        setSessionSeconds(nextStudyTime);
+
+        if (nextStudyTime === STUDY_THRESHOLD) {
+          toast({
+            title: "Focus Reward Unlocked! 🏆",
+            description: `You've studied for the set threshold. You've earned a 10-minute break!`,
+            className: "bg-primary text-primary-foreground font-bold",
+          });
+        }
       } else {
         // 2. Decrement reward time if break is active
-        setRewardTimeLeft(prev => {
-          if (prev <= 1) {
-            setIsRewardActive(false);
-            setSessionSeconds(0); // Reset for next cycle
-            toast({
-              title: "Break Over! 🛑",
-              description: "Reward time finished. Time to get back to studying!",
-              variant: "destructive",
-            });
-            return 0;
-          }
-          return prev - 1;
-        });
+        const nextRewardTime = rewardTimeLeft - 1;
+        setRewardTimeLeft(nextRewardTime);
+
+        if (nextRewardTime <= 0) {
+          setIsRewardActive(false);
+          setSessionSeconds(0); // Reset for next cycle
+          toast({
+            title: "Break Over! 🛑",
+            description: "Reward time finished. Time to get back to studying!",
+            variant: "destructive",
+          });
+        }
       }
 
       // 3. Update Global Leaderboard study time every 60 seconds
@@ -196,7 +193,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [user, db, room?.password, isUnlocked, isFull, isRewardActive, sessionSeconds, toast]);
+  }, [user, db, room?.password, isUnlocked, isFull, isRewardActive, sessionSeconds, rewardTimeLeft, toast]);
 
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
@@ -420,7 +417,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const isCreator = user?.uid === room.creatorId;
   const pinnedParticipant = participants?.find(p => p.userId === pinnedId) || (pinnedId === user?.uid ? { userId: user?.uid, name: 'You', photoUrl: user?.photoURL || '' } : null);
   const studyProgress = Math.min((sessionSeconds / STUDY_THRESHOLD) * 100, 100);
-  const rewardProgress = (rewardTimeLeft / REWARD_DURATION) * 100;
+  const rewardProgress = Math.max(0, Math.min((rewardTimeLeft / REWARD_DURATION) * 100, 100));
 
   return (
     <TooltipProvider>
@@ -439,7 +436,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </div>
         </div>
 
-        {/* Focus Tracker Bar in Header */}
         {!isRewardActive && (
           <div className="hidden md:flex flex-col gap-1 w-48 mx-4">
              <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-primary/60">
@@ -485,7 +481,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5 relative">
           
-          {/* REWARD OVERLAY SECTION */}
           {isRewardActive && (
             <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
                <Card className="max-w-4xl w-full h-full max-h-[85vh] border-emerald-500/20 bg-card/40 flex flex-col overflow-hidden shadow-[0_0_100px_rgba(16,185,129,0.1)]">
@@ -695,20 +690,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       <p className="text-[8px] font-bold text-primary/60 uppercase text-right">Progress: {studyProgress.toFixed(0)}%</p>
                     </div>
                  </Card>
-
-                 <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Reward Mechanics</p>
-                    <div className="flex flex-col gap-2">
-                       <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Complete focused study to earn break.</span>
-                       </div>
-                       <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>10 minutes of social access per session.</span>
-                       </div>
-                    </div>
-                 </div>
 
                  {sessionSeconds >= STUDY_THRESHOLD ? (
                    <Button className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl animate-bounce" onClick={handleStartReward}>
