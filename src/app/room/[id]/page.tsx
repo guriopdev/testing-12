@@ -20,6 +20,7 @@ import {
   MoreVertical,
   UserPlus,
   CheckCircle2,
+  AtSign,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -54,7 +55,7 @@ import {
   deleteDocumentNonBlocking, 
   addDocumentNonBlocking 
 } from '@/firebase';
-import { doc, collection, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { doc, collection, serverTimestamp, query, orderBy, where, getDoc } from 'firebase/firestore';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -114,17 +115,27 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
 
-    const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
-    setDocumentNonBlocking(participantRef, {
-      userId: user.uid,
-      name: user.displayName || 'Guest',
-      photoUrl: user.photoURL || '',
-      isMuted,
-      isCameraOff,
-      joinedAt: serverTimestamp(),
-    }, { merge: true });
+    const syncParticipant = async () => {
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.exists() ? userSnap.data() : null;
+
+      const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
+      setDocumentNonBlocking(participantRef, {
+        userId: user.uid,
+        name: user.displayName || 'Guest',
+        username: userData?.username || 'anonymous',
+        photoUrl: user.photoURL || '',
+        isMuted,
+        isCameraOff,
+        joinedAt: serverTimestamp(),
+      }, { merge: true });
+    };
+
+    syncParticipant();
 
     return () => {
+      const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
       deleteDocumentNonBlocking(participantRef);
     };
   }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked, isFull]);
@@ -145,11 +156,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       } catch (error) {
         console.error('Error accessing media:', error);
         setHasCameraPermission(false);
-        toast({
-          variant: 'destructive',
-          title: 'Media Access Denied',
-          description: 'Please enable camera and microphone permissions in your browser settings.',
-        });
       }
     };
 
@@ -166,14 +172,18 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [messages]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatMessage.trim() || !user) return;
+
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    const userData = userSnap.data();
 
     addDocumentNonBlocking(collection(db, 'rooms', roomId, 'messages'), {
       text: chatMessage.trim(),
       senderId: user.uid,
       senderName: user.displayName || 'Guest',
+      senderUsername: userData?.username || 'student',
       timestamp: serverTimestamp(),
     });
 
@@ -209,7 +219,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
-  const handleSendFriendRequest = (participant: any) => {
+  const handleSendFriendRequest = async (participant: any) => {
     if (!user) return;
     
     const isAlreadySent = sentRequests?.find(r => r.receiverId === participant.userId);
@@ -218,12 +228,17 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       return;
     }
 
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    const myData = userSnap.data();
+
     addDocumentNonBlocking(collection(db, 'friendRequests'), {
       senderId: user.uid,
       senderName: user.displayName || 'Student',
+      senderUsername: myData?.username || 'student',
       senderPhoto: user.photoURL || '',
       receiverId: participant.userId,
       receiverName: participant.name,
+      receiverUsername: participant.username,
       receiverPhoto: participant.photoUrl,
       status: 'pending',
       timestamp: serverTimestamp(),
@@ -231,7 +246,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
     toast({
       title: 'Friend Request Sent',
-      description: `Request sent to ${participant.name}`,
+      description: `Request sent to @${participant.username}`,
     });
   };
 
@@ -383,13 +398,16 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             {participants?.filter(p => p.userId !== user?.uid).map((p) => (
               <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/40 group ring-1 ring-primary/5">
                 <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/5">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl ring-2 ring-primary/10">
+                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl ring-2 ring-primary/10 transition-transform group-hover:scale-110">
                     <AvatarImage src={p.photoUrl} />
                     <AvatarFallback className="text-4xl font-headline bg-primary/10 text-primary">{p.name.charAt(0)}</AvatarFallback>
                   </Avatar>
                 </div>
                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate">{p.name}</span>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate">{p.name}</span>
+                    <span className="text-[8px] text-primary font-mono px-2">@{p.username}</span>
+                  </div>
                   <div className="flex gap-2 items-center">
                     {p.isMuted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4 text-primary" />}
                     {p.isCameraOff ? <VideoOff className="h-4 w-4 text-muted-foreground" /> : <Video className="h-4 w-4 text-primary" />}
@@ -559,7 +577,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     const hasRequest = sentRequests?.find(r => r.receiverId === p.userId);
 
                     return (
-                      <div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-colors">
+                      <div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-all">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border border-primary/20 group-hover/p:border-primary/50 transition-all">
                             <AvatarImage src={p.photoUrl} />
@@ -567,7 +585,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                           </Avatar>
                           <div className="flex flex-col">
                             <span className="font-semibold text-sm">{p.name}</span>
-                            {isSelf && <span className="text-[10px] uppercase font-bold text-primary">You</span>}
+                            <span className="text-[10px] text-primary font-mono">@{p.username}</span>
+                            {isSelf && <span className="text-[10px] uppercase font-bold text-muted-foreground">You</span>}
                           </div>
                         </div>
                         {!isSelf && (
@@ -576,7 +595,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                                    <CheckCircle2 className="h-3 w-3 mr-1" /> Requested
+                                    <CheckCircle2 className="h-3 w-3 mr-1" /> Sent
                                   </Badge>
                                 </TooltipTrigger>
                                 <TooltipContent><p>Request pending</p></TooltipContent>
@@ -586,7 +605,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => handleSendFriendRequest(p)}
-                                className="h-8 px-2 text-primary hover:bg-primary hover:text-white rounded-lg"
+                                className="h-8 px-3 text-primary bg-primary/5 hover:bg-primary hover:text-white rounded-lg transition-all"
                               >
                                 <UserPlus className="h-4 w-4 mr-1" /> Add
                               </Button>

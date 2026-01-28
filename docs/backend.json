@@ -9,9 +9,10 @@
         "id": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
+        "username": { "type": "string", "description": "Unique student handle." },
         "photoUrl": { "type": "string", "format": "uri" }
       },
-      "required": ["id", "email", "displayName"]
+      "required": ["id", "email", "displayName", "username"]
     },
     "Room": {
       "title": "Room",
@@ -36,6 +37,7 @@
       "properties": {
         "userId": { "type": "string" },
         "name": { "type": "string" },
+        "username": { "type": "string" },
         "photoUrl": { "type": "string" },
         "isMuted": { "type": "boolean" },
         "isCameraOff": { "type": "boolean" },
@@ -52,6 +54,7 @@
         "text": { "type": "string" },
         "senderId": { "type": "string" },
         "senderName": { "type": "string" },
+        "senderUsername": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["text", "senderId", "senderName"]
@@ -63,8 +66,12 @@
       "properties": {
         "senderId": { "type": "string" },
         "senderName": { "type": "string" },
+        "senderUsername": { "type": "string" },
         "senderPhoto": { "type": "string" },
         "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "receiverUsername": { "type": "string" },
+        "receiverPhoto": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
         "timestamp": { "type": "string", "format": "date-time" }
       },
@@ -90,6 +97,10 @@
     "/users/{userId}": {
       "schema": "#/backend/entities/User",
       "description": "User profiles."
+    },
+    "/usernames/{username}": {
+      "schema": { "type": "object", "properties": { "userId": { "type": "string" } } },
+      "description": "Registry for unique usernames."
     },
     "/rooms/{roomId}": {
       "schema": "#/backend/entities/Room",

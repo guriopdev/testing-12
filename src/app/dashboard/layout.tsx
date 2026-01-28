@@ -2,6 +2,7 @@
 'use client';
 
 import { CreateRoomDialog } from '@/components/create-room-dialog';
+import { UsernameSetupDialog } from '@/components/username-setup-dialog';
 import { Logo } from '@/components/logo';
 import { UserNav } from '@/components/user-nav';
 import { LayoutDashboard, Users, MessageSquare, Settings } from 'lucide-react';
@@ -36,6 +37,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
+      <UsernameSetupDialog />
       <header className="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-primary/10 bg-background/80 px-4 backdrop-blur-xl md:px-6 shadow-sm">
         <nav className="flex w-full items-center gap-4 lg:gap-8">
           <Logo />
