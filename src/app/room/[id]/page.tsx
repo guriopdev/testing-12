@@ -24,7 +24,6 @@ import {
   UserCircle,
   Pin,
   PinOff,
-  Maximize2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -117,7 +116,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }, [user]);
   const { data: sentRequests } = useCollection(requestsQuery);
 
-  // Fetch full user data for the selected participant to show bio, pronouns, country etc.
   const selectedUserRef = useMemoFirebase(() => {
     if (!db || !selectedParticipant) return null;
     return doc(db, 'users', selectedParticipant.userId);
@@ -125,6 +123,26 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const { data: selectedUserData } = useDoc(selectedUserRef);
 
   const isFull = participants && room && participants.length >= (room.maxParticipants || 10) && !participants.find(p => p.userId === user?.uid);
+
+  // Persistence logic for passwords and active status
+  useEffect(() => {
+    if (!roomId) return;
+    
+    // Check session storage for existing unlock
+    const sessionKey = `room_unlocked_${roomId}`;
+    if (sessionStorage.getItem(sessionKey) === 'true') {
+      setIsUnlocked(true);
+    }
+    
+    // Mark as the current active session for the layout banner
+    sessionStorage.setItem('last_active_room_id', roomId);
+    if (room?.name) sessionStorage.setItem('last_active_room_name', room.name);
+
+    return () => {
+      // Clear active room ID when leaving (it survives navigation but can be cleared if needed)
+      // We keep it so the dashboard banner can show "Resume Session"
+    };
+  }, [roomId, room?.name]);
 
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
@@ -224,6 +242,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     e.preventDefault();
     if (passwordInput.trim() === room?.password) {
       setIsUnlocked(true);
+      sessionStorage.setItem(`room_unlocked_${roomId}`, 'true');
     } else {
       toast({
         variant: 'destructive',
@@ -268,6 +287,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     if (!room || !user || room.creatorId !== user.uid) return;
     deleteDocumentNonBlocking(roomRef);
     setIsDeleteDialogOpen(false);
+    sessionStorage.removeItem(`room_unlocked_${roomId}`);
+    sessionStorage.removeItem('last_active_room_id');
     router.push('/dashboard');
   };
 
@@ -342,14 +363,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }
 
   const isCreator = user?.uid === room.creatorId;
-
-  // Determine which participant is currently pinned
   const pinnedParticipant = participants?.find(p => p.userId === pinnedId) || (pinnedId === user?.uid ? { userId: user?.uid, name: 'You', photoUrl: user?.photoURL || '' } : null);
 
   return (
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
-      {/* Header */}
       <header className="flex h-16 items-center justify-between border-b border-primary/10 bg-card/60 backdrop-blur-xl px-4 md:px-6 z-30 shadow-lg">
         <div className="flex items-center gap-3">
           <Link href="/dashboard">
@@ -392,8 +410,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
           <div className="mx-auto max-w-7xl flex flex-col gap-4">
-            
-            {/* Pinned View */}
             {pinnedId && (
               <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl ring-4 ring-primary/5 animate-fade-in-up">
                 {pinnedId === user?.uid ? (
@@ -431,12 +447,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               </div>
             )}
 
-            {/* Normal Grid */}
             <div className={cn(
               "grid gap-4 content-start",
               pinnedId ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
             )}>
-              {/* My Video Feed */}
               <div className={cn(
                 "relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg group transition-all hover:border-primary/40",
                 pinnedId === user?.uid && "ring-2 ring-primary border-primary/40"
@@ -461,12 +475,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     <Button size="icon" variant="ghost" className="h-6 w-6 text-white hover:text-primary" onClick={() => handleTogglePin(user?.uid || '')}>
                       <Pin className={cn("h-3.5 w-3.5", pinnedId === user?.uid && "fill-primary")} />
                     </Button>
+                    {!isMuted && <div className="h-2 w-2 rounded-full bg-primary animate-ping" />}
                     {isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
                   </div>
                 </div>
               </div>
 
-              {/* Other Participants */}
               {participants?.filter(p => p.userId !== user?.uid).map((p) => (
                 <div key={p.id} className={cn(
                   "relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/40 group ring-1 ring-primary/5",
@@ -485,6 +499,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       <span className="text-[8px] text-primary font-mono px-2">@{p.username}</span>
                     </div>
                     <div className="flex gap-1 items-center">
+                      {!p.isMuted && <div className="h-2 w-2 rounded-full bg-primary animate-ping" />}
                       <Button size="icon" variant="ghost" className="h-6 w-6 text-white hover:text-primary" onClick={() => handleTogglePin(p.userId)}>
                         <Pin className={cn("h-3 w-3", pinnedId === p.userId && "fill-primary")} />
                       </Button>
@@ -508,7 +523,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           )}
         </main>
 
-        {/* Desktop Sidebar Chat */}
         <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-[-10px_0_30px_rgba(0,0,0,0.5)]">
           <div className="p-4 border-b border-primary/10 flex items-center justify-between">
             <h2 className="font-headline font-bold text-xs tracking-widest uppercase text-primary">Live Chat</h2>
@@ -553,7 +567,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </aside>
       </div>
 
-      {/* Controls Footer */}
       <footer className="flex h-24 flex-shrink-0 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
         <div className="flex items-center gap-4 px-6 py-3 bg-background/50 rounded-full border border-primary/10 shadow-2xl ring-1 ring-primary/20">
           <Tooltip>
@@ -592,7 +605,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
           <Separator orientation="vertical" className="h-8 bg-primary/10 mx-2" />
 
-          {/* Chat for Mobile (Sheet) */}
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 lg:hidden hover:text-primary transition-colors">
@@ -638,7 +650,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </SheetContent>
           </Sheet>
 
-          {/* Participants Sheet */}
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 hover:text-primary transition-colors">
@@ -679,7 +690,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 </div>
               </ScrollArea>
               
-              {/* Mini Profile / Friend Request View */}
               {selectedParticipant && (
                 <div className="absolute inset-0 bg-card z-50 animate-in slide-in-from-right duration-300 flex flex-col p-6 overflow-hidden">
                   <Button variant="ghost" size="sm" className="w-fit mb-6 text-muted-foreground hover:text-primary" onClick={() => setSelectedParticipant(null)}>

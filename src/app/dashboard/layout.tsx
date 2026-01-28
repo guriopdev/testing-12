@@ -1,17 +1,19 @@
 
 'use client';
 
+import { useState, useEffect } from 'react';
 import { CreateRoomDialog } from '@/components/create-room-dialog';
 import { UsernameSetupDialog } from '@/components/username-setup-dialog';
 import { Logo } from '@/components/logo';
 import { UserNav } from '@/components/user-nav';
-import { LayoutDashboard, Users, MessageSquare, Settings, CheckSquare, Clock } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, CheckSquare, Clock, ArrowRight, Video } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 export default function DashboardLayout({
   children,
@@ -21,6 +23,21 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { user } = useUser();
   const db = useFirestore();
+
+  const [lastActiveRoom, setLastActiveRoom] = useState<{ id: string; name: string } | null>(null);
+
+  useEffect(() => {
+    // Check for active session in session storage
+    const roomId = sessionStorage.getItem('last_active_room_id');
+    const roomName = sessionStorage.getItem('last_active_room_name');
+    
+    // Only show the resume banner if we're not currently in that room
+    if (roomId && !pathname.includes(`/room/${roomId}`)) {
+      setLastActiveRoom({ id: roomId, name: roomName || 'Recent Meeting' });
+    } else {
+      setLastActiveRoom(null);
+    }
+  }, [pathname]);
 
   const requestsQuery = useMemoFirebase(() => {
     if (!db || !user) return null;
@@ -40,6 +57,24 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
       <UsernameSetupDialog />
+      
+      {/* Resume Session Banner */}
+      {lastActiveRoom && (
+        <div className="bg-primary/20 border-b border-primary/20 py-2 px-4 flex items-center justify-center gap-4 animate-in slide-in-from-top duration-500">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-xs font-bold text-primary uppercase tracking-widest truncate max-w-[200px]">
+              Active Session: {lastActiveRoom.name}
+            </span>
+          </div>
+          <Button asChild size="sm" variant="outline" className="h-7 border-primary/30 bg-primary/10 text-primary text-[10px] font-bold hover:bg-primary hover:text-primary-foreground">
+            <Link href={`/room/${lastActiveRoom.id}`}>
+              Resume <Video className="ml-2 h-3 w-3" />
+            </Link>
+          </Button>
+        </div>
+      )}
+
       <header className="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-primary/10 bg-background/80 px-4 backdrop-blur-xl md:px-6 shadow-sm">
         <nav className="flex w-full items-center gap-4 lg:gap-8">
           <Logo />
