@@ -4,6 +4,7 @@
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { MessageSquare, Loader2, ArrowRight, User, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
