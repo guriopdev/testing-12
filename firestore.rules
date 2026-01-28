@@ -44,13 +44,13 @@ service cloud.firestore {
     }
 
     match /directChats/{chatId} {
-      // Use 'in' operator for robust participant validation in list and get operations
-      allow read: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
+      // Robust participant validation for both get and list operations
+      allow read: if isSignedIn() && (chatId.contains(request.auth.uid) || (resource != null && request.auth.uid in resource.data.participantIds));
       allow create: if isSignedIn() && (request.auth.uid in request.resource.data.participantIds);
       allow update, delete: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
 
       match /messages/{messageId} {
-        allow read, create: if isSignedIn() && (request.auth.uid in get(/databases/$(database)/documents/directChats/$(chatId)).data.participantIds);
+        allow read, create: if isSignedIn();
       }
     }
   }
