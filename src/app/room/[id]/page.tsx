@@ -83,7 +83,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const STUDY_THRESHOLD = 3600; // 1 hour in seconds
+// TEST MODE: 4 seconds threshold. Production: 3600 (1 hour).
+const STUDY_THRESHOLD = 4; 
 const REWARD_DURATION = 600; // 10 minutes in seconds
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
@@ -162,7 +163,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           if (next === STUDY_THRESHOLD) {
             toast({
               title: "Focus Reward Unlocked! 🏆",
-              description: "You've studied for 1 hour. You've earned a 10-minute break!",
+              description: `You've studied for the set threshold. You've earned a 10-minute break!`,
               className: "bg-primary text-primary-foreground font-bold",
             });
           }
@@ -195,7 +196,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [user, db, room?.password, isUnlocked, isFull, isRewardActive, sessionSeconds]);
+  }, [user, db, room?.password, isUnlocked, isFull, isRewardActive, sessionSeconds, toast]);
 
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;
@@ -396,12 +397,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             <p className="text-muted-foreground">This session is password protected.</p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <Input 
+            <input 
               type="password" 
               placeholder="Enter Password" 
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              className="h-12 bg-background/50 border-primary/20 text-center tracking-widest text-lg focus:border-primary"
+              className="h-12 w-full bg-background/50 border border-primary/20 rounded-xl text-center tracking-widest text-lg focus:border-primary focus:outline-none"
               autoFocus
             />
             <Button type="submit" className="w-full h-12 text-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity">
@@ -443,7 +444,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           <div className="hidden md:flex flex-col gap-1 w-48 mx-4">
              <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-primary/60">
                <span>Focus Goal</span>
-               <span>{Math.floor(sessionSeconds / 60)}/60 min</span>
+               <span>{sessionSeconds}/{STUDY_THRESHOLD}s</span>
              </div>
              <Progress value={studyProgress} className="h-1.5 bg-primary/10" />
           </div>
@@ -504,7 +505,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     </div>
                     <div className="space-y-2">
                       <h3 className="text-3xl font-bold font-headline">Study Hard, Play Hard.</h3>
-                      <p className="text-muted-foreground max-w-md mx-auto">You've unlocked your 10-minute Instagram session. Since external sites are strictly protected, use the link below to open a reward window, or relax until the session resets.</p>
+                      <p className="text-muted-foreground max-w-md mx-auto">You've unlocked your reward session. Since external sites are strictly protected, use the link below to open a reward window, or relax until the session resets.</p>
                     </div>
                     <Button asChild size="lg" className="h-14 px-8 bg-emerald-500 text-white font-bold text-lg hover:bg-emerald-600 rounded-2xl">
                        <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">
@@ -685,7 +686,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     <div className="flex justify-between items-end">
                        <div>
                           <p className="text-[10px] font-bold uppercase text-muted-foreground">Next Reward In</p>
-                          <p className="text-xl font-bold font-headline">{Math.floor((STUDY_THRESHOLD - sessionSeconds) / 60)} min</p>
+                          <p className="text-xl font-bold font-headline">{Math.max(0, STUDY_THRESHOLD - sessionSeconds)}s</p>
                        </div>
                        <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
                     </div>
@@ -700,7 +701,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     <div className="flex flex-col gap-2">
                        <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
                           <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>Complete 1 hour of study to earn break.</span>
+                          <span>Complete focused study to earn break.</span>
                        </div>
                        <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
                           <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
@@ -717,7 +718,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                  ) : (
                    <Button disabled className="w-full h-12 bg-primary/10 border border-primary/10 text-muted-foreground font-bold rounded-xl opacity-50">
                      <Lock className="mr-2 h-4 w-4" />
-                     Locked: Study {Math.floor((STUDY_THRESHOLD - sessionSeconds) / 60)}m More
+                     Locked: Study {Math.max(0, STUDY_THRESHOLD - sessionSeconds)}s More
                    </Button>
                  )}
                </div>
