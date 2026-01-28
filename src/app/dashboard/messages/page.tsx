@@ -45,7 +45,7 @@ export default function MessagesPage() {
                   <div className="flex-1 min-w-0">
                     <CardTitle className="text-lg">Private Conversation</CardTitle>
                     <CardDescription className="truncate text-[10px] font-mono text-primary/60 uppercase tracking-widest">
-                      Stable Channel
+                      {chat.lastMessage || 'Open chat to start talking'}
                     </CardDescription>
                   </div>
                   <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
