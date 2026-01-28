@@ -6,7 +6,7 @@ import { CreateRoomDialog } from '@/components/create-room-dialog';
 import { UsernameSetupDialog } from '@/components/username-setup-dialog';
 import { Logo } from '@/components/logo';
 import { UserNav } from '@/components/user-nav';
-import { LayoutDashboard, Users, MessageSquare, CheckSquare, Clock, ArrowRight, Video } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, CheckSquare, Clock, Trophy, Video } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -52,6 +52,7 @@ export default function DashboardLayout({
     { name: 'Chats', href: '/dashboard/messages', icon: MessageSquare },
     { name: 'Tasks', href: '/dashboard/tasks', icon: CheckSquare },
     { name: 'Focus', href: '/dashboard/timer', icon: Clock },
+    { name: 'Leaderboard', href: '/dashboard/leaderboard', icon: Trophy },
   ];
 
   return (

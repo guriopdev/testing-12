@@ -58,7 +58,7 @@ import {
   deleteDocumentNonBlocking, 
   addDocumentNonBlocking 
 } from '@/firebase';
-import { doc, collection, serverTimestamp, query, orderBy, where, getDoc } from 'firebase/firestore';
+import { doc, collection, serverTimestamp, query, orderBy, where, getDoc, updateDoc, increment } from 'firebase/firestore';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,6 +143,20 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       // We keep it so the dashboard banner can show "Resume Session"
     };
   }, [roomId, room?.name]);
+
+  // STUDY TIME TRACKER: Increment user study time every 60 seconds
+  useEffect(() => {
+    if (!user || !db || (room?.password && !isUnlocked) || isFull) return;
+
+    const interval = setInterval(() => {
+      const userRef = doc(db, 'users', user.uid);
+      updateDoc(userRef, {
+        totalStudySeconds: increment(60)
+      }).catch(err => console.error("Failed to update study time:", err));
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [user, db, room?.password, isUnlocked, isFull]);
 
   useEffect(() => {
     if (!user || !db || !roomId || (room?.password && !isUnlocked) || isFull) return;

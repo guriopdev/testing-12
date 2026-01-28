@@ -13,7 +13,8 @@
         "photoUrl": { "type": "string", "format": "uri" },
         "aboutMe": { "type": "string", "description": "A short bio about the student." },
         "pronouns": { "type": "string", "description": "User's preferred pronouns." },
-        "country": { "type": "string", "description": "User's country or region." }
+        "country": { "type": "string", "description": "User's country or region." },
+        "totalStudySeconds": { "type": "number", "default": 0, "description": "Cumulative time spent in study rooms." }
       },
       "required": ["id", "email", "displayName", "username"]
     },
