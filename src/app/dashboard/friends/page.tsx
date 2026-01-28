@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -17,38 +16,36 @@ export default function FriendsPage() {
   const db = useFirestore();
   const router = useRouter();
 
-  // Outgoing and Incoming requests
   const requestsQuery = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(collection(db, 'friendRequests'), where('receiverId', '==', user.uid), where('status', '==', 'pending'));
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const outgoingQuery = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(collection(db, 'friendRequests'), where('senderId', '==', user.uid), where('status', '==', 'pending'));
-  }, [db, user]);
+  }, [db, user?.uid]);
 
-  const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
+  const { data: requests } = useCollection(requestsQuery);
   const { data: outgoing } = useCollection(outgoingQuery);
 
-  // Friends are derived from accepted requests where the user is either sender or receiver
   const friendsQuery = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(
       collection(db, 'friendRequests'),
       where('status', '==', 'accepted'),
       where('receiverId', '==', user.uid)
     );
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const friendsQuery2 = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(
       collection(db, 'friendRequests'),
       where('status', '==', 'accepted'),
       where('senderId', '==', user.uid)
     );
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const { data: friends1 } = useCollection(friendsQuery);
   const { data: friends2 } = useCollection(friendsQuery2);
@@ -64,13 +61,11 @@ export default function FriendsPage() {
   };
 
   const handleStartChat = (friendId: string) => {
-    if (!user) return;
+    if (!user?.uid) return;
     
-    // Stable ID for 1-on-1 chats based on sorted UIDs
     const chatId = [user.uid, friendId].sort().join('_');
     const chatRef = doc(db, 'directChats', chatId);
     
-    // Use setDocumentNonBlocking with merge to ensure the chat metadata exists
     setDocumentNonBlocking(chatRef, {
       participantIds: [user.uid, friendId],
       updatedAt: serverTimestamp()

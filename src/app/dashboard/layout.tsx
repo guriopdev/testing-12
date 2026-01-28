@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -11,7 +10,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useUser, useFirestore, useCollection, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, doc } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -28,7 +27,7 @@ export default function DashboardLayout({
 
   // Heartbeat system to track online status
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user?.uid || !db) return;
 
     const updateHeartbeat = () => {
       const userRef = doc(db, 'users', user.uid);
@@ -37,18 +36,16 @@ export default function DashboardLayout({
       });
     };
 
-    updateHeartbeat(); // Initial heartbeat
-    const interval = setInterval(updateHeartbeat, 60000); // Every 60 seconds
+    updateHeartbeat(); 
+    const interval = setInterval(updateHeartbeat, 60000);
 
     return () => clearInterval(interval);
-  }, [user, db]);
+  }, [user?.uid, db]);
 
   useEffect(() => {
-    // Check for active session in session storage
     const roomId = sessionStorage.getItem('last_active_room_id');
     const roomName = sessionStorage.getItem('last_active_room_name');
     
-    // Only show the resume banner if we're not currently in that room
     if (roomId && !pathname.includes(`/room/${roomId}`)) {
       setLastActiveRoom({ id: roomId, name: roomName || 'Recent Meeting' });
     } else {
@@ -57,9 +54,9 @@ export default function DashboardLayout({
   }, [pathname]);
 
   const requestsQuery = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(collection(db, 'friendRequests'), where('receiverId', '==', user.uid), where('status', '==', 'pending'));
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const { data: pendingRequests } = useCollection(requestsQuery);
 
@@ -76,7 +73,6 @@ export default function DashboardLayout({
     <div className="flex min-h-screen w-full flex-col bg-background">
       <UsernameSetupDialog />
       
-      {/* Resume Session Banner */}
       {lastActiveRoom && (
         <div className="bg-primary/20 border-b border-primary/20 py-2 px-4 flex items-center justify-center gap-4 animate-in slide-in-from-top duration-500">
           <div className="flex items-center gap-2">
@@ -129,7 +125,6 @@ export default function DashboardLayout({
         </nav>
       </header>
 
-      {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-16 bg-card/90 backdrop-blur-xl border-t border-primary/10 flex items-center justify-around px-2 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
         {navItems.map((item) => (
           <Link

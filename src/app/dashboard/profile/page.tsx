@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -21,9 +20,9 @@ export default function ProfilePage() {
   const { toast } = useToast();
   
   const userDocRef = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return doc(db, 'users', user.uid);
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const { data: userData, isLoading: isUserDocLoading } = useDoc(userDocRef);
 
@@ -48,14 +47,12 @@ export default function ProfilePage() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user?.uid) return;
 
     setIsUpdating(true);
     try {
-      // Update Firebase Auth Profile (limited to displayName)
       await updateProfile(user, { displayName: formData.displayName });
       
-      // Update Firestore Profile with extra fields
       const userRef = doc(db, 'users', user.uid);
       updateDocumentNonBlocking(userRef, { 
         displayName: formData.displayName,

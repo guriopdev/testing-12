@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -17,15 +16,15 @@ export default function TasksPage() {
   const [newTask, setNewTask] = useState('');
 
   const tasksQuery = useMemoFirebase(() => {
-    if (!db || !user) return null;
+    if (!db || !user?.uid) return null;
     return query(collection(db, 'users', user.uid, 'tasks'), orderBy('createdAt', 'desc'));
-  }, [db, user]);
+  }, [db, user?.uid]);
 
   const { data: tasks, isLoading } = useCollection(tasksQuery);
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTask.trim() || !user) return;
+    if (!newTask.trim() || !user?.uid) return;
 
     addDocumentNonBlocking(collection(db, 'users', user.uid, 'tasks'), {
       text: newTask.trim(),
@@ -36,14 +35,14 @@ export default function TasksPage() {
   };
 
   const toggleTask = (taskId: string, completed: boolean) => {
-    if (!user) return;
+    if (!user?.uid) return;
     updateDocumentNonBlocking(doc(db, 'users', user.uid, 'tasks', taskId), {
       completed: !completed
     });
   };
 
   const deleteTask = (taskId: string) => {
-    if (!user) return;
+    if (!user?.uid) return;
     deleteDocumentNonBlocking(doc(db, 'users', user.uid, 'tasks', taskId));
   };
 

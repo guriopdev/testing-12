@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect, useRef, use } from 'react';
+import { useState, useEffect, useRef, use, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -20,7 +19,6 @@ import {
   PinOff,
   Instagram,
   Trophy,
-  Zap,
   ExternalLink,
   ShieldAlert,
   AlertTriangle,
@@ -61,13 +59,12 @@ import {
   addDocumentNonBlocking,
   updateDocumentNonBlocking
 } from '@/firebase';
-import { doc, collection, serverTimestamp, query, orderBy, where, getDoc, increment } from 'firebase/firestore';
+import { doc, collection, serverTimestamp, query, orderBy, getDoc, increment } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// TEST MODE: 4 seconds threshold. Production: 3600 (1 hour).
 const STUDY_THRESHOLD = 4; 
-const REWARD_DURATION = 10; // 10 seconds for quick testing.
-const PENALTY_GRACE_PERIOD = 5; // Seconds to return before penalty kicks in
+const REWARD_DURATION = 10; 
+const PENALTY_GRACE_PERIOD = 5; 
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = use(params);
@@ -84,7 +81,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [chatMessage, setChatMessage] = useState('');
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   
-  // Reward & Lockdown State
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [rewardTimeLeft, setRewardTimeLeft] = useState(0);
   const [isRewardActive, setIsRewardActive] = useState(false);
@@ -117,71 +113,66 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     if (room?.name) sessionStorage.setItem('last_active_room_name', room.name);
   }, [roomId, room?.name]);
 
-  // CORE ENGINE: Study Tracking, Rewards, and Penalty Logic
+  const handleRewardUnlocked = useCallback(() => {
+    setIsRewardActive(true);
+    setRewardTimeLeft(REWARD_DURATION);
+    setTimeout(() => {
+      toast({
+        title: "Break Zone Unlocked!",
+        description: `Enjoy your earned social break. Protocol active.`,
+        className: "bg-emerald-500 text-white font-bold border-none",
+      });
+    }, 0);
+  }, [toast]);
+
+  const handleBreakExpired = useCallback(() => {
+    setIsRewardActive(false);
+    setIsBreakOverdue(true);
+    setPenaltyTime(0);
+    document.title = "⚠️ RETURN TO FOCUS";
+    setTimeout(() => {
+      toast({
+        title: "BREAK EXPIRED!",
+        description: "Room is now LOCKED. Return immediately.",
+        variant: "destructive",
+      });
+    }, 0);
+  }, [toast]);
+
   useEffect(() => {
-    if (!user || !db || (room?.password && !isUnlocked)) return;
+    if (!user?.uid || !db || (room?.password && !isUnlocked)) return;
 
     const interval = setInterval(() => {
-      // 1. NORMAL STUDY MODE
       if (!isRewardActive && !isBreakOverdue) {
         setSessionSeconds((prev) => {
           const next = prev + 1;
-          
-          // Every 60 seconds of study, update the global leaderboard
           if (next % 60 === 0) {
             updateDocumentNonBlocking(doc(db, 'users', user.uid), {
               totalStudySeconds: increment(60)
             });
           }
-
           if (next >= STUDY_THRESHOLD) {
-            setIsRewardActive(true);
-            setRewardTimeLeft(REWARD_DURATION);
-            
-            // Side effect outside of state update per React guidelines
-            setTimeout(() => {
-              toast({
-                title: "Break Zone Unlocked!",
-                description: `Enjoy your earned social break. Protocol active.`,
-                className: "bg-emerald-500 text-white font-bold border-none",
-              });
-            }, 0);
+            handleRewardUnlocked();
           }
           return next;
         });
       } 
-      // 2. REWARD BREAK MODE
       else if (isRewardActive) {
         setRewardTimeLeft((prev) => {
           const next = prev - 1;
           if (next <= 0) {
-            setIsRewardActive(false);
-            setIsBreakOverdue(true);
-            setPenaltyTime(0);
-            
-            // Visual notification in the background
-            document.title = "⚠️ RETURN TO FOCUS";
-            
-            setTimeout(() => {
-              toast({
-                title: "BREAK EXPIRED!",
-                description: "Room is now LOCKED. Return immediately.",
-                variant: "destructive",
-              });
-            }, 0);
+            handleBreakExpired();
             return 0;
           }
           return next;
         });
       }
-      // 3. PENALTY / OVERDUE MODE
       else if (isBreakOverdue) {
         setPenaltyTime((prev) => {
           const next = prev + 1;
-          // If they haven't returned for more than the grace period, punish their leaderboard stats
           if (next > PENALTY_GRACE_PERIOD) {
              updateDocumentNonBlocking(doc(db, 'users', user.uid), {
-               totalStudySeconds: increment(-5) // Deduct time for distraction
+               totalStudySeconds: increment(-5)
              });
           }
           return next;
@@ -189,15 +180,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       }
     }, 1000);
 
-    return () => {
-      clearInterval(interval);
-      document.title = "StudyParadox";
-    };
-  }, [user, db, room?.password, isUnlocked, isRewardActive, isBreakOverdue, toast]);
+    return () => clearInterval(interval);
+  }, [user?.uid, db, room?.password, isUnlocked, isRewardActive, isBreakOverdue, handleRewardUnlocked, handleBreakExpired]);
 
-  // Sync participant status
   useEffect(() => {
-    if (!user || !db || !roomId || (room?.password && !isUnlocked)) return;
+    if (!user?.uid || !db || !roomId || (room?.password && !isUnlocked)) return;
 
     const syncParticipant = async () => {
       const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
@@ -216,9 +203,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
       deleteDocumentNonBlocking(participantRef);
     };
-  }, [user, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
+  }, [user?.uid, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
 
-  // Media Permissions
   useEffect(() => {
     if ((room?.password && !isUnlocked)) return;
 
@@ -241,9 +227,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return () => {
       stream?.getTracks().forEach(track => track.stop());
     };
-  }, [room?.password, isUnlocked]);
+  }, [room?.password, isUnlocked, isCameraOff, isMuted]);
 
-  // Auto-scroll chat
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -252,7 +237,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatMessage.trim() || !user) return;
+    if (!chatMessage.trim() || !user?.uid) return;
 
     const userSnap = await getDoc(doc(db, 'users', user.uid));
     const userData = userSnap.data();
@@ -360,8 +345,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   return (
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
-      
-      {/* 🛑 HARD LOCKDOWN PROTOCOL (Active when break ends) */}
       {isBreakOverdue && (
         <div className={cn(
           "fixed inset-0 z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500",
@@ -394,12 +377,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     ? "Your study streak is now BLEEDING. Every second away from focus is reducing your leaderboard rank." 
                     : "Your break has officially expired. Return to focus immediately to protect your streak."}
                 </p>
-                {penaltyTime > PENALTY_GRACE_PERIOD && (
-                  <div className="flex items-center justify-center gap-2 text-red-500 font-bold animate-pulse">
-                    <History className="h-4 w-4" />
-                    <span>Deducting Study Seconds...</span>
-                  </div>
-                )}
               </div>
 
               <Button onClick={handleResumeStudy} size="lg" className={cn(
@@ -412,7 +389,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </div>
       )}
 
-      {/* 🎁 REWARD PORTAL (Social Break Active) */}
       {isRewardActive && (
         <div className="fixed inset-0 z-[90] bg-background/90 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
             <Card className="max-w-4xl w-full border-emerald-500/30 bg-card/80 flex flex-col overflow-hidden shadow-2xl">
@@ -440,10 +416,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <h3 className="text-4xl font-bold font-headline">Break Authorized</h3>
                   <p className="text-muted-foreground text-lg leading-relaxed">
                     You have earned this window of distraction. Use the link below to access Instagram. 
-                    <br/><br/>
-                    <span className="text-red-400 font-bold uppercase tracking-tighter text-sm">
-                      Note: Fail to return within {rewardTimeLeft}s and your study rank will be penalized.
-                    </span>
                   </p>
                 </div>
 
@@ -452,17 +424,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     <ExternalLink className="mr-3 h-7 w-7 transition-transform group-hover:rotate-12" />
                     Open Instagram
                   </Button>
-                  
                   <Button variant="outline" size="lg" className="h-20 px-10 border-white/10 hover:bg-white/5 text-muted-foreground font-bold rounded-3xl" onClick={() => setIsRewardActive(false)}>
                     End Early
                   </Button>
                 </div>
-              </div>
-              
-              <div className="p-4 bg-black/40 text-center">
-                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.2em] opacity-40">
-                  Secured Workspace • {room.name}
-                </p>
               </div>
             </Card>
         </div>
@@ -485,13 +450,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
              </div>
              <Progress value={studyProgress} className="h-1.5 bg-primary/10" />
           </div>
-        )}
-
-        {isRewardActive && (
-          <Badge className="animate-pulse bg-emerald-500 text-white border-none gap-2 px-3 py-1 font-bold">
-            <Instagram className="h-3 w-3" />
-            Social Break: {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
-          </Badge>
         )}
         
         <div className="flex items-center gap-2">
@@ -586,7 +544,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                      <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
                   </div>
                   <Progress value={studyProgress} className="h-2 bg-primary/10" />
-                  <p className="text-[10px] text-muted-foreground">Complete 1 hour of deep work to unlock the Social Break Zone.</p>
                </Card>
             </TabsContent>
           </Tabs>
@@ -602,14 +559,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
           </Button>
           <Separator orientation="vertical" className="h-8 bg-primary/10 mx-2" />
-          <Sheet>
-            <SheetTrigger asChild><Button variant="ghost" size="icon" className="rounded-full h-12 w-12 lg:hidden"><MessageSquare className="h-5 w-5" /></Button></SheetTrigger>
-            <SheetContent className="bg-card/95"><SheetHeader><SheetTitle>Chat</SheetTitle></SheetHeader></SheetContent>
-          </Sheet>
-          <Sheet>
-            <SheetTrigger asChild><Button variant="ghost" size="icon" className="rounded-full h-12 w-12"><Users className="h-5 w-5" /></Button></SheetTrigger>
-            <SheetContent className="bg-card/95"><SheetHeader><SheetTitle>Participants ({participants?.length || 0})</SheetTitle></SheetHeader></SheetContent>
-          </Sheet>
         </div>
       </footer>
     </div>
