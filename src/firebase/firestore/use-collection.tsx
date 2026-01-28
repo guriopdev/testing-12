@@ -69,9 +69,24 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
+        // Attempt to extract path from CollectionReference or Query for debugging
+        let path = 'unknown-collection-path';
+        if (memoizedTargetRefOrQuery) {
+          if ('path' in memoizedTargetRefOrQuery) {
+            path = memoizedTargetRefOrQuery.path;
+          } else {
+            try {
+              // Access internal query path for better debugging in prototypes
+              path = (memoizedTargetRefOrQuery as any)._query?.path?.toArray().join('/') || 'query-on-unknown-path';
+            } catch (e) {
+              path = 'query-path-unextractable';
+            }
+          }
+        }
+
         const contextualError = new FirestorePermissionError({
           operation: 'list',
-          path: (memoizedTargetRefOrQuery as any)?.path || 'unknown',
+          path: path,
         });
 
         setError(contextualError);
