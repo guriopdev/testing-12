@@ -31,7 +31,7 @@ export default function Home() {
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      // Handle the case where user closes the popup or common environment issues
+      // Silently handle common popup issues without crashing
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
         return;
       }
@@ -39,16 +39,14 @@ export default function Home() {
       let message = 'Could not complete sign in. Please try again.';
       
       if (error.code === 'auth/unauthorized-domain') {
-        message = 'This domain is not authorized for login. Please check your Firebase Console settings.';
+        message = 'Login blocked: You must add this URL to your "Authorized Domains" in the Firebase Console Settings.';
       } else if (error.code === 'auth/popup-blocked') {
-        message = 'Sign-in popup was blocked. Please allow popups for this site in your browser settings.';
-      } else if (error.code === 'auth/operation-not-allowed') {
-        message = 'Google sign-in is not enabled in the Firebase Console.';
+        message = 'Login blocked: Please allow popups for this site in your browser settings.';
       }
 
       toast({
         variant: 'destructive',
-        title: 'Sign In Error',
+        title: 'Sign In Help',
         description: message,
       });
       console.error('Auth Error:', error);
@@ -97,7 +95,7 @@ export default function Home() {
 
           <div className="text-center space-y-4">
             <p className="text-xs text-muted-foreground leading-relaxed px-4">
-              If login doesn't work in a new window, ensure popups are allowed and the domain is authorized in Firebase.
+              If the login window doesn't appear, check if your browser blocked the popup. If it says "Domain not authorized", add this URL to your Firebase Console settings.
             </p>
           </div>
         </CardContent>

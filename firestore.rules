@@ -43,8 +43,8 @@ service cloud.firestore {
     }
 
     match /directChats/{chatId} {
-      // Use hasAny for robust participant validation in list queries
-      allow read: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
+      // Robust participant validation using hasAny for both single-doc and collection queries
+      allow get, list: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
       allow create: if isSignedIn() && request.resource.data.participantIds.hasAny([request.auth.uid]);
       allow update: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
       allow delete: if isSignedIn() && resource.data.participantIds.hasAny([request.auth.uid]);
