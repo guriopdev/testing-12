@@ -28,7 +28,7 @@ export default function MessagesPage() {
 
   const { data: chats, isLoading: isChatsLoading } = useCollection(chatsQuery);
 
-  // Friends Query (to allow starting new chats)
+  // Friends Query
   const friendsQuery1 = useMemoFirebase(() => {
     if (!db || !user?.uid) return null;
     return query(collection(db, 'friendRequests'), where('receiverId', '==', user.uid), where('status', '==', 'accepted'));
@@ -108,8 +108,13 @@ export default function MessagesPage() {
                 <MessageSquare className="h-8 w-8 text-primary/20" />
               </div>
               <p className="text-muted-foreground text-sm max-w-xs mx-auto">
-                No active conversations yet. Start one by selecting a partner on the right.
+                No active conversations yet.
               </p>
+              <Link href="/dashboard/friends">
+                <Button variant="outline" className="mt-4 border-primary/20 text-primary hover:bg-primary/10">
+                  Find Partners
+                </Button>
+              </Link>
             </Card>
           )}
         </div>
@@ -152,7 +157,6 @@ export default function MessagesPage() {
                             <AvatarImage src={friendPhoto} />
                             <AvatarFallback className="bg-primary/10 text-primary">{friendName?.charAt(0)}</AvatarFallback>
                           </Avatar>
-                          <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-emerald-500 rounded-full border-2 border-card" title="Active Now" />
                         </div>
                         <div className="flex flex-col">
                           <span className="text-sm font-bold">{friendName}</span>
