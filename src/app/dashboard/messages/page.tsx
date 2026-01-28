@@ -4,7 +4,6 @@
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageSquare, Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
@@ -38,15 +37,15 @@ export default function MessagesPage() {
         <div className="grid gap-4">
           {chats.map((chat) => (
             <Link key={chat.id} href={`/dashboard/chat/${chat.id}`}>
-              <Card className="bg-card/40 border-primary/10 hover:border-primary/40 transition-all group">
+              <Card className="bg-card/40 border-primary/10 hover:border-primary/40 transition-all group overflow-hidden">
                 <CardContent className="flex items-center gap-4 p-4">
-                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
                     <MessageSquare className="h-6 w-6 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <CardTitle className="text-lg">Private Chat</CardTitle>
-                    <CardDescription className="truncate">
-                      {chat.lastMessage || 'No messages yet...'}
+                    <CardDescription className="truncate text-xs font-mono text-primary/60">
+                      ID: {chat.id}
                     </CardDescription>
                   </div>
                   <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
@@ -58,9 +57,9 @@ export default function MessagesPage() {
       ) : (
         <div className="py-12 text-center bg-card/20 rounded-2xl border border-dashed border-primary/10">
           <MessageSquare className="h-12 w-12 text-primary/20 mx-auto mb-4" />
-          <p className="text-muted-foreground">No active conversations. Start one from your friends list!</p>
+          <p className="text-muted-foreground font-medium">No active conversations yet.</p>
           <Link href="/dashboard/friends" className="text-primary font-bold hover:underline mt-2 inline-block">
-            Go to Friends
+            Go to Friends Hub
           </Link>
         </div>
       )}

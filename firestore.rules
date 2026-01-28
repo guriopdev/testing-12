@@ -44,12 +44,14 @@ service cloud.firestore {
     }
 
     match /directChats/{chatId} {
-      allow read: if isSignedIn() && request.auth.uid in resource.data.participantIds;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && request.auth.uid in resource.data.participantIds;
+      // Use hasAny for list queries to match array-contains queries reliably
+      allow read: if isSignedIn() && (resource.data.participantIds.hasAny([request.auth.uid]));
+      // Allow creation if the user is one of the participants
+      allow create: if isSignedIn() && (request.resource.data.participantIds.hasAny([request.auth.uid]));
+      allow update: if isSignedIn() && (resource.data.participantIds.hasAny([request.auth.uid]));
 
       match /messages/{messageId} {
-        allow read, create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/directChats/$(chatId)).data.participantIds;
+        allow read, create: if isSignedIn() && get(/databases/$(database)/documents/directChats/$(chatId)).data.participantIds.hasAny([request.auth.uid]);
       }
     }
   }

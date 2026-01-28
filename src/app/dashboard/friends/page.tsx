@@ -2,14 +2,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useUser, useFirestore, useCollection, useMemoFirebase, updateDocumentNonBlocking, deleteDocumentNonBlocking, addDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, orderBy, doc, limit } from 'firebase/firestore';
+import { useUser, useFirestore, useCollection, useMemoFirebase, updateDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MessageSquare, UserPlus, UserCheck, X, Loader2, UserX } from 'lucide-react';
+import { MessageSquare, UserPlus, UserCheck, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function FriendsPage() {
@@ -63,17 +63,18 @@ export default function FriendsPage() {
     deleteDocumentNonBlocking(doc(db, 'friendRequests', requestId));
   };
 
-  const handleStartChat = async (friendId: string) => {
+  const handleStartChat = (friendId: string) => {
     if (!user) return;
+    
+    // Stable ID for 1-on-1 chats based on sorted UIDs
     const chatId = [user.uid, friendId].sort().join('_');
     const chatRef = doc(db, 'directChats', chatId);
     
-    // We use set with merge to ensure the chat container exists
-    addDocumentNonBlocking(collection(db, 'directChats'), {
-      id: chatId,
+    // Use setDocumentNonBlocking with merge to ensure the chat metadata exists
+    setDocumentNonBlocking(chatRef, {
       participantIds: [user.uid, friendId],
-      updatedAt: new Date().toISOString()
-    });
+      updatedAt: serverTimestamp()
+    }, { merge: true });
     
     router.push(`/dashboard/chat/${chatId}`);
   };
@@ -146,7 +147,7 @@ export default function FriendsPage() {
                   <div className="flex items-center gap-4">
                     <Avatar className="h-10 w-10">
                       <AvatarImage src={req.senderPhoto} />
-                      <AvatarFallback className="bg-primary/20 text-primary">{req.senderName.charAt(0)}</AvatarFallback>
+                      <AvatarFallback className="bg-primary/20 text-primary">{req.senderName?.charAt(0)}</AvatarFallback>
                     </Avatar>
                     <div>
                       <p className="font-bold">{req.senderName}</p>
