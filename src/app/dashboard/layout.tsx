@@ -5,7 +5,7 @@ import { CreateRoomDialog } from '@/components/create-room-dialog';
 import { UsernameSetupDialog } from '@/components/username-setup-dialog';
 import { Logo } from '@/components/logo';
 import { UserNav } from '@/components/user-nav';
-import { LayoutDashboard, Users, MessageSquare, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, CheckSquare, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -31,8 +31,10 @@ export default function DashboardLayout({
 
   const navItems = [
     { name: 'Rooms', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Friends', href: '/dashboard/friends', icon: Users, badge: pendingRequests?.length },
-    { name: 'Settings', href: '/dashboard/profile', icon: Settings },
+    { name: 'Social', href: '/dashboard/friends', icon: Users, badge: pendingRequests?.length },
+    { name: 'Chats', href: '/dashboard/messages', icon: MessageSquare },
+    { name: 'Tasks', href: '/dashboard/tasks', icon: CheckSquare },
+    { name: 'Focus', href: '/dashboard/timer', icon: Clock },
   ];
 
   return (
@@ -49,7 +51,7 @@ export default function DashboardLayout({
                 href={item.href}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-xl relative",
-                  pathname === item.href 
+                  pathname.startsWith(item.href) && (item.href === '/dashboard' ? pathname === '/dashboard' : true)
                     ? "text-primary bg-primary/10" 
                     : "text-muted-foreground hover:text-primary hover:bg-primary/5"
                 )}
@@ -60,9 +62,6 @@ export default function DashboardLayout({
                   <Badge className="ml-1 h-4 min-w-4 p-1 text-[8px] bg-primary text-primary-foreground border-none">
                     {item.badge}
                   </Badge>
-                )}
-                {pathname === item.href && (
-                  <span className="absolute bottom-[-17px] left-0 right-0 h-1 bg-primary rounded-t-full" />
                 )}
               </Link>
             ))}
@@ -85,7 +84,9 @@ export default function DashboardLayout({
             href={item.href}
             className={cn(
               "flex flex-col items-center gap-1 p-2 rounded-xl transition-all",
-              pathname === item.href ? "text-primary" : "text-muted-foreground"
+              pathname.startsWith(item.href) && (item.href === '/dashboard' ? pathname === '/dashboard' : true)
+                ? "text-primary" 
+                : "text-muted-foreground"
             )}
           >
             <div className="relative">

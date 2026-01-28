@@ -9,6 +9,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isSignedIn();
       allow create, update: if isSignedIn() && request.auth.uid == userId;
+
+      match /tasks/{taskId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     match /usernames/{username} {

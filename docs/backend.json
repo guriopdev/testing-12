@@ -88,6 +88,18 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["participantIds"]
+    },
+    "Task": {
+      "title": "Task",
+      "type": "object",
+      "description": "A student task/todo item.",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "completed": { "type": "boolean", "default": false },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "completed"]
     }
   },
   "auth": {
@@ -97,6 +109,10 @@
     "/users/{userId}": {
       "schema": "#/backend/entities/User",
       "description": "User profiles."
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "#/backend/entities/Task",
+      "description": "User specific to-do tasks."
     },
     "/usernames/{username}": {
       "schema": { "type": "object", "properties": { "userId": { "type": "string" } } },
