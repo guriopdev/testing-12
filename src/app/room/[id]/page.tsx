@@ -22,7 +22,9 @@ import {
   CheckCircle2,
   Globe,
   UserCircle,
-  Info,
+  Pin,
+  PinOff,
+  Maximize2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -92,6 +94,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [chatMessage, setChatMessage] = useState('');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<any>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -114,7 +117,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }, [user]);
   const { data: sentRequests } = useCollection(requestsQuery);
 
-  // Fetch full user data for the selected participant to show bio etc.
+  // Fetch full user data for the selected participant to show bio, pronouns, country etc.
   const selectedUserRef = useMemoFirebase(() => {
     if (!db || !selectedParticipant) return null;
     return doc(db, 'users', selectedParticipant.userId);
@@ -268,6 +271,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     router.push('/dashboard');
   };
 
+  const handleTogglePin = (id: string) => {
+    setPinnedId(pinnedId === id ? null : id);
+  };
+
   if (isRoomLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -336,6 +343,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   const isCreator = user?.uid === room.creatorId;
 
+  // Determine which participant is currently pinned
+  const pinnedParticipant = participants?.find(p => p.userId === pinnedId) || (pinnedId === user?.uid ? { userId: user?.uid, name: 'You', photoUrl: user?.photoURL || '' } : null);
+
   return (
     <TooltipProvider>
     <div className="flex h-screen w-full flex-col bg-background font-body text-foreground overflow-hidden">
@@ -381,51 +391,109 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
-          <div className="mx-auto max-w-7xl grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 content-start">
-            {/* My Video Feed */}
-            <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-2xl group ring-1 ring-primary/5">
-              <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
-              
-              {isCameraOff && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-background">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-2xl ring-4 ring-primary/20">
-                    <AvatarImage src={user?.photoURL || ''} />
-                    <AvatarFallback className="text-4xl bg-primary text-primary-foreground font-headline">
-                      {user?.displayName?.charAt(0) || '?'}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-              )}
+          <div className="mx-auto max-w-7xl flex flex-col gap-4">
+            
+            {/* Pinned View */}
+            {pinnedId && (
+              <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl ring-4 ring-primary/5 animate-fade-in-up">
+                {pinnedId === user?.uid ? (
+                   <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/10">
+                    <Avatar className="h-40 w-40 border-8 border-background shadow-2xl">
+                      <AvatarImage src={pinnedParticipant?.photoUrl} />
+                      <AvatarFallback className="text-7xl font-headline bg-primary/10 text-primary">{pinnedParticipant?.name?.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                  </div>
+                )}
+                
+                {pinnedId === user?.uid && isCameraOff && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-background">
+                    <Avatar className="h-40 w-40 border-8 border-background shadow-2xl">
+                      <AvatarImage src={user?.photoURL || ''} />
+                      <AvatarFallback className="text-7xl bg-primary text-primary-foreground font-headline">
+                        {user?.displayName?.charAt(0) || '?'}
+                      </AvatarFallback>
+                    </Avatar>
+                  </div>
+                )}
 
-              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2">You</span>
-                <div className="flex gap-2">
-                  {isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
+                <div className="absolute top-4 right-4 flex gap-2">
+                  <Button size="icon" variant="secondary" className="rounded-full bg-black/40 backdrop-blur-md border-white/10 hover:bg-black/60" onClick={() => setPinnedId(null)}>
+                    <PinOff className="h-5 w-5" />
+                  </Button>
+                </div>
+
+                <div className="absolute bottom-6 left-6 flex items-center gap-3 bg-black/60 backdrop-blur-xl rounded-2xl p-4 border border-white/10">
+                  <span className="text-lg font-bold text-white tracking-wide uppercase px-2">{pinnedParticipant?.name}</span>
+                  <Badge variant="secondary" className="bg-primary/20 text-primary border-none text-xs">Pinned Session</Badge>
                 </div>
               </div>
+            )}
+
+            {/* Normal Grid */}
+            <div className={cn(
+              "grid gap-4 content-start",
+              pinnedId ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            )}>
+              {/* My Video Feed */}
+              <div className={cn(
+                "relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg group transition-all hover:border-primary/40",
+                pinnedId === user?.uid && "ring-2 ring-primary border-primary/40"
+              )}>
+                <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", (isCameraOff || pinnedId === user?.uid) && "hidden")} />
+                
+                {(isCameraOff || pinnedId === user?.uid) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-background">
+                    <Avatar className="h-16 w-16 border-2 border-background shadow-xl">
+                      <AvatarImage src={user?.photoURL || ''} />
+                      <AvatarFallback className="text-2xl bg-primary text-primary-foreground font-headline">
+                        {user?.displayName?.charAt(0) || '?'}
+                      </AvatarFallback>
+                    </Avatar>
+                    {pinnedId === user?.uid && <div className="absolute inset-0 bg-black/20 flex items-center justify-center backdrop-blur-[2px]"><Pin className="h-8 w-8 text-white animate-pulse" /></div>}
+                  </div>
+                )}
+
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2">You</span>
+                  <div className="flex gap-2">
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-white hover:text-primary" onClick={() => handleTogglePin(user?.uid || '')}>
+                      <Pin className={cn("h-3.5 w-3.5", pinnedId === user?.uid && "fill-primary")} />
+                    </Button>
+                    {isMuted ? <MicOff className="h-3 w-3 text-destructive" /> : <Mic className="h-3 w-3 text-primary" />}
+                  </div>
+                </div>
+              </div>
+
+              {/* Other Participants */}
+              {participants?.filter(p => p.userId !== user?.uid).map((p) => (
+                <div key={p.id} className={cn(
+                  "relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/40 group ring-1 ring-primary/5",
+                  pinnedId === p.userId && "ring-2 ring-primary border-primary/40"
+                )}>
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/5">
+                    <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl ring-2 ring-primary/10 transition-transform group-hover:scale-105">
+                      <AvatarImage src={p.photoUrl} />
+                      <AvatarFallback className="text-4xl font-headline bg-primary/10 text-primary">{p.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    {pinnedId === p.userId && <div className="absolute inset-0 bg-black/20 flex items-center justify-center backdrop-blur-[2px]"><Pin className="h-8 w-8 text-white animate-pulse" /></div>}
+                  </div>
+                  <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate cursor-pointer" onClick={() => setSelectedParticipant(p)}>{p.name}</span>
+                      <span className="text-[8px] text-primary font-mono px-2">@{p.username}</span>
+                    </div>
+                    <div className="flex gap-1 items-center">
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-white hover:text-primary" onClick={() => handleTogglePin(p.userId)}>
+                        <Pin className={cn("h-3 w-3", pinnedId === p.userId && "fill-primary")} />
+                      </Button>
+                      {p.isMuted ? <MicOff className="h-3.5 w-3.5 text-destructive" /> : <Mic className="h-3.5 w-3.5 text-primary" />}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-
-            {/* Other Participants */}
-            {participants?.filter(p => p.userId !== user?.uid).map((p) => (
-              <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 shadow-lg transition-all hover:border-primary/40 group ring-1 ring-primary/5">
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-tr from-background to-primary/5">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border-4 border-background shadow-xl ring-2 ring-primary/10 transition-transform group-hover:scale-110">
-                    <AvatarImage src={p.photoUrl} />
-                    <AvatarFallback className="text-4xl font-headline bg-primary/10 text-primary">{p.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                </div>
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between bg-black/60 backdrop-blur-md rounded-xl p-2 border border-white/10">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold text-white uppercase tracking-wider px-2 truncate">{p.name}</span>
-                    <span className="text-[8px] text-primary font-mono px-2">@{p.username}</span>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    {p.isMuted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4 text-primary" />}
-                    {p.isCameraOff ? <VideoOff className="h-4 w-4 text-muted-foreground" /> : <Video className="h-4 w-4 text-primary" />}
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
           
           {hasCameraPermission === false && (
@@ -451,7 +519,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             <div className="flex flex-col gap-4">
               {messages?.map((msg) => (
                 <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
+                    <span className="text-[8px] text-primary/40 font-mono lowercase">@{msg.senderUsername}</span>
+                  </div>
                   <div className={cn(
                     "px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words shadow-sm",
                     msg.senderId === user?.uid 
@@ -583,11 +654,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               </SheetHeader>
               <ScrollArea className="h-full pr-4">
                 <div className="flex flex-col gap-3">
-                  {participants?.map((p) => {
-                    const isSelf = p.userId === user?.uid;
-                    const hasRequest = sentRequests?.find(r => r.receiverId === p.userId);
-
-                    return (
+                  {participants?.map((p) => (
                       <div 
                         key={p.id} 
                         className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-primary/5 group/p hover:bg-primary/5 transition-all cursor-pointer"
@@ -599,35 +666,37 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                             <AvatarFallback className="bg-primary/10 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
                           </Avatar>
                           <div className="flex flex-col">
-                            <span className="font-semibold text-sm">{p.name}</span>
-                            <span className="text-[10px] text-primary font-mono">@{p.username}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm">{p.name}</span>
+                              {p.userId === room.creatorId && <Badge variant="outline" className="text-[8px] h-3 px-1 border-primary/40 text-primary">Creator</Badge>}
+                            </div>
+                            <span className="text-[10px] text-primary font-mono lowercase">@{p.username}</span>
                           </div>
                         </div>
                         <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover/p:opacity-100 transition-all" />
                       </div>
-                    );
-                  })}
+                  ))}
                 </div>
               </ScrollArea>
               
               {/* Mini Profile / Friend Request View */}
               {selectedParticipant && (
-                <div className="absolute inset-0 bg-card z-50 animate-in slide-in-from-right duration-300 flex flex-col p-6">
-                  <Button variant="ghost" size="sm" className="w-fit mb-6" onClick={() => setSelectedParticipant(null)}>
+                <div className="absolute inset-0 bg-card z-50 animate-in slide-in-from-right duration-300 flex flex-col p-6 overflow-hidden">
+                  <Button variant="ghost" size="sm" className="w-fit mb-6 text-muted-foreground hover:text-primary" onClick={() => setSelectedParticipant(null)}>
                     <ChevronRight className="h-4 w-4 rotate-180 mr-2" />
                     Back to List
                   </Button>
                   
                   <div className="flex flex-col items-center text-center gap-4">
-                    <Avatar className="h-24 w-24 border-4 border-primary/20 shadow-xl">
+                    <Avatar className="h-24 w-24 border-4 border-primary/20 shadow-xl ring-2 ring-primary/5">
                       <AvatarImage src={selectedParticipant.photoUrl} />
                       <AvatarFallback className="bg-primary/10 text-primary text-3xl font-headline">{selectedParticipant.name.charAt(0)}</AvatarFallback>
                     </Avatar>
                     <div className="space-y-1">
-                      <h3 className="text-2xl font-bold font-headline">{selectedParticipant.name}</h3>
-                      <p className="text-primary font-mono lowercase">@{selectedParticipant.username}</p>
+                      <h3 className="text-2xl font-bold font-headline text-foreground">{selectedParticipant.name}</h3>
+                      <p className="text-primary font-mono lowercase text-sm">@{selectedParticipant.username}</p>
                       {selectedUserData?.pronouns && (
-                        <Badge variant="outline" className="mt-1 bg-primary/5 border-primary/20">{selectedUserData.pronouns}</Badge>
+                        <Badge variant="outline" className="mt-1 bg-primary/5 border-primary/20 text-[10px] font-bold uppercase tracking-wider">{selectedUserData.pronouns}</Badge>
                       )}
                     </div>
                   </div>
@@ -639,7 +708,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       {selectedUserData?.country && (
                         <div className="space-y-1">
                           <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
-                            <Globe className="h-3 w-3" /> Origin
+                            <Globe className="h-3 w-3" /> Country / Region
                           </p>
                           <p className="text-sm font-medium">{selectedUserData.country}</p>
                         </div>
@@ -647,22 +716,27 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
                       <div className="space-y-1">
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary/60 flex items-center gap-1">
-                          <UserCircle className="h-3 w-3" /> About Me
+                          <UserCircle className="h-3 w-3" /> Student Bio
                         </p>
                         <p className="text-sm leading-relaxed text-muted-foreground italic">
-                          {selectedUserData?.aboutMe || "This student hasn't written a bio yet."}
+                          {selectedUserData?.aboutMe || "This student hasn't added a bio to their workspace yet."}
                         </p>
                       </div>
                       
                       {!user || selectedParticipant.userId === user.uid ? null : (
-                        <div className="pt-4">
+                        <div className="pt-4 space-y-3">
+                          <Button className="w-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all" onClick={() => handleTogglePin(selectedParticipant.userId)}>
+                            <Pin className="h-4 w-4 mr-2" />
+                            {pinnedId === selectedParticipant.userId ? 'Unpin Video' : 'Pin to Focus'}
+                          </Button>
+
                           {sentRequests?.find(r => r.receiverId === selectedParticipant.userId) ? (
-                            <Button disabled className="w-full bg-primary/20 text-primary border border-primary/30">
+                            <Button disabled className="w-full bg-secondary text-muted-foreground border border-white/5">
                               <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Request Pending
+                              Partner Request Pending
                             </Button>
                           ) : (
-                            <Button className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20" onClick={() => handleSendFriendRequest(selectedParticipant)}>
+                            <Button className="w-full bg-primary text-primary-foreground shadow-lg shadow-primary/20 font-bold" onClick={() => handleSendFriendRequest(selectedParticipant)}>
                               <UserPlus className="h-4 w-4 mr-2" />
                               Add Study Partner
                             </Button>
