@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useRouter } from 'next/navigation';
@@ -82,7 +83,7 @@ export default function Home() {
         <CardContent className="space-y-8 pb-10">
           <div className="flex flex-col gap-4">
             <Button onClick={handleGoogleSignIn} className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xl shadow-primary/20 rounded-xl" size="lg">
-              <Chrome className="mr-2 h-6 w-6" />
+              < Chrome className="mr-2 h-6 w-6" />
               Sign in with Google
             </Button>
             
