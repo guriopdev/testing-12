@@ -69,24 +69,22 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // Attempt to extract path from CollectionReference or Query for debugging
+        // More robust path extraction for different SDK versions and Query objects
         let path = 'unknown';
         if (memoizedTargetRefOrQuery) {
-          // Check if it's a CollectionReference
-          if ('path' in memoizedTargetRefOrQuery) {
-            path = memoizedTargetRefOrQuery.path;
-          } else {
-            // It's likely a Query, try to get the path from the internal query object
-            try {
-              const internalQuery = (memoizedTargetRefOrQuery as any)._query;
-              if (internalQuery && internalQuery.path) {
-                path = internalQuery.path.toArray().join('/');
-              } else if ((memoizedTargetRefOrQuery as any).path) {
-                path = (memoizedTargetRefOrQuery as any).path;
+          try {
+            if ('path' in memoizedTargetRefOrQuery) {
+              path = (memoizedTargetRefOrQuery as any).path;
+            } else if ('_query' in memoizedTargetRefOrQuery) {
+              const q = (memoizedTargetRefOrQuery as any)._query;
+              if (q.path) {
+                path = q.path.toArray().join('/');
               }
-            } catch (e) {
-              path = 'directChats'; // Fallback for the known issue
+            } else if ((memoizedTargetRefOrQuery as any).converter?.path) {
+              path = (memoizedTargetRefOrQuery as any).converter.path;
             }
+          } catch (e) {
+            path = 'collection-query';
           }
         }
 
@@ -99,7 +97,6 @@ export function useCollection<T = any>(
         setData(null);
         setIsLoading(false);
       
-        // Emit for the global listener
         errorEmitter.emit('permission-error', contextualError);
       }
     );

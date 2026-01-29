@@ -7,6 +7,7 @@ service cloud.firestore {
     
     // User Profiles
     match /users/{userId} {
+      // Allow list for leaderboard and profile discovery
       allow read, list: if isSignedIn();
       allow create, update: if isSignedIn() && request.auth.uid == userId;
 
@@ -46,15 +47,15 @@ service cloud.firestore {
     }
 
     // Direct Messaging
-    // Explicitly splitting read into get and list for better query compatibility
     match /directChats/{chatId} {
-      allow get: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
-      allow list: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
+      // Use consolidated read for better compatibility with collection queries
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
       allow create: if isSignedIn() && (request.auth.uid in request.resource.data.participantIds);
       allow update: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
       allow delete: if isSignedIn() && (request.auth.uid in resource.data.participantIds);
 
       match /messages/{messageId} {
+        // Read receipts and chat history
         allow read, list, create, update: if isSignedIn();
       }
     }
