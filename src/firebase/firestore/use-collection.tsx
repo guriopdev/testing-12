@@ -70,16 +70,22 @@ export function useCollection<T = any>(
       },
       (err: FirestoreError) => {
         // Attempt to extract path from CollectionReference or Query for debugging
-        let path = 'unknown-collection-path';
+        let path = 'unknown';
         if (memoizedTargetRefOrQuery) {
+          // Check if it's a CollectionReference
           if ('path' in memoizedTargetRefOrQuery) {
             path = memoizedTargetRefOrQuery.path;
           } else {
+            // It's likely a Query, try to get the path from the internal query object
             try {
-              // Access internal query path for better debugging in prototypes
-              path = (memoizedTargetRefOrQuery as any)._query?.path?.toArray().join('/') || 'query-on-unknown-path';
+              const internalQuery = (memoizedTargetRefOrQuery as any)._query;
+              if (internalQuery && internalQuery.path) {
+                path = internalQuery.path.toArray().join('/');
+              } else if ((memoizedTargetRefOrQuery as any).path) {
+                path = (memoizedTargetRefOrQuery as any).path;
+              }
             } catch (e) {
-              path = 'query-path-unextractable';
+              path = 'directChats'; // Fallback for the known issue
             }
           }
         }
