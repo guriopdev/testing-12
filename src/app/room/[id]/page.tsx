@@ -64,9 +64,9 @@ import {
 import { doc, collection, serverTimestamp, query, orderBy, increment } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const STUDY_THRESHOLD = 4; // Testing threshold (4 seconds)
-const REWARD_DURATION = 10; 
-const PENALTY_GRACE_PERIOD = 5; 
+const STUDY_THRESHOLD = 3600; // 1 hour focus required for reward
+const REWARD_DURATION = 600; // 10 minute social media break
+const PENALTY_GRACE_PERIOD = 30; // 30 seconds to return before points bleed
 
 const POMODORO_MODES = {
   WORK: { label: 'Focus', time: 25 * 60, icon: BookOpen },
@@ -111,7 +111,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const roomRef = useMemoFirebase(() => doc(db, 'rooms', roomId), [db, roomId]);
   const { data: room, isLoading: isRoomLoading } = useDoc(roomRef);
 
-  const myParticipantRef = useMemoFirebase(() => user ? doc(db, 'rooms', roomId, 'participants', user.uid) : null, [db, roomId, user?.uid]);
+  const myParticipantRef = useMemoFirebase(() => user?.uid ? doc(db, 'rooms', roomId, 'participants', user.uid) : null, [db, roomId, user?.uid]);
   const { data: myParticipantData } = useDoc(myParticipantRef);
 
   const participantsQuery = useMemoFirebase(() => collection(db, 'rooms', roomId, 'participants'), [db, roomId]);
@@ -142,12 +142,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   // Handle Kick
   useEffect(() => {
-    if (user && participants && !participants.some(p => p.userId === user.uid) && isUnlocked) {
-      // If I'm no longer in participants but I think I'm in the room, I might have been kicked
+    if (user?.uid && participants && !participants.some(p => p.userId === user.uid) && isUnlocked) {
       router.push('/dashboard');
       toast({ title: "You have been removed from the room", variant: "destructive" });
     }
-  }, [participants, user, isUnlocked]);
+  }, [participants, user?.uid, isUnlocked]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -164,7 +163,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     setRewardTimeLeft(REWARD_DURATION);
     toast({
       title: "Break Zone Unlocked!",
-      description: `Enjoy your earned social break. Protocol active.`,
+      description: "You've earned 10 minutes of Instagram time. Protocol active.",
       className: "bg-emerald-500 text-white font-bold border-none",
     });
   }, [toast]);
@@ -176,7 +175,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     document.title = "⚠️ RETURN TO FOCUS";
     toast({
       title: "BREAK EXPIRED!",
-      description: "Room is now LOCKED. Return immediately.",
+      description: "Focus Guard triggered. Return to the workspace immediately.",
       variant: "destructive",
     });
   }, [toast]);
@@ -190,7 +189,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       setIsPomoActive(false);
       toast({
         title: `${POMODORO_MODES[pomoMode].label} session complete!`,
-        description: pomoMode === 'WORK' ? "Time for a short rest." : "Ready to focus again?",
+        description: pomoMode === 'WORK' ? "Time for a rest." : "Ready to focus again?",
       });
     }
     return () => clearInterval(interval);
@@ -204,6 +203,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       if (!isRewardActive && !isBreakOverdue) {
         setSessionSeconds((prev) => {
           const next = prev + 1;
+          // Every minute, update the cumulative study time
           if (next % 60 === 0) {
             updateDocumentNonBlocking(doc(db, 'users', user.uid), {
               totalStudySeconds: increment(60)
@@ -228,9 +228,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       else if (isBreakOverdue) {
         setPenaltyTime((prev) => {
           const next = prev + 1;
+          // After grace period, deduct points every second
           if (next > PENALTY_GRACE_PERIOD) {
              updateDocumentNonBlocking(doc(db, 'users', user.uid), {
-               totalStudySeconds: increment(-5)
+               totalStudySeconds: increment(-10) // 10s penalty per 1s delay
              });
           }
           return next;
@@ -249,6 +250,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       setDocumentNonBlocking(participantRef, {
         userId: user.uid,
         name: user.displayName || 'Guest',
+        photoUrl: user.photoURL || '',
         isMuted,
         isCameraOff,
         joinedAt: serverTimestamp(),
@@ -279,7 +281,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         currentStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
         currentStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
       } catch (err: any) {
-        console.error('Error starting media:', err);
+        if (err.name === 'NotReadableError') {
+          toast({
+            variant: "destructive",
+            title: "Camera Busy",
+            description: "Your camera is being used by another app or tab.",
+          });
+        }
       }
     };
 
@@ -290,7 +298,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         currentStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [room?.password, isUnlocked]);
+  }, [room?.password, isUnlocked, toast]);
 
   useEffect(() => {
     if (stream) {
@@ -478,12 +486,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   "text-4xl font-headline font-bold",
                   penaltyTime > PENALTY_GRACE_PERIOD ? "text-red-500" : "text-foreground"
                 )}>
-                  {penaltyTime > PENALTY_GRACE_PERIOD ? "PENALTY ACTIVE" : "LOCKDOWN"}
+                  {penaltyTime > PENALTY_GRACE_PERIOD ? "STREAK BLEEDING" : "BREAK EXPIRED"}
                 </h2>
                 <p className="text-muted-foreground text-lg">
                   {penaltyTime > PENALTY_GRACE_PERIOD 
-                    ? "Your study streak is now BLEEDING. Every second away from focus is reducing your leaderboard rank." 
-                    : "Your break has officially expired. Return to focus immediately to protect your streak."}
+                    ? `Your focus rank is dropping! Return immediately to stop the ${Math.floor(penaltyTime)}s penalty.` 
+                    : "Your allocated distraction window has closed. Resume your session to avoid point deduction."}
                 </p>
               </div>
 
@@ -506,24 +514,24 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     <Instagram className="h-8 w-8 text-emerald-400" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-headline font-bold text-emerald-400 uppercase tracking-widest">Social Break Zone</h2>
-                    <p className="text-xs text-emerald-400/60 font-medium">Paradox Protocol Level 2 Unlocked</p>
+                    <h2 className="text-2xl font-headline font-bold text-emerald-400 uppercase tracking-widest">Focus Reward Zone</h2>
+                    <p className="text-xs text-emerald-400/60 font-medium">10 Minute Distraction Window</p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold font-mono">
-                    <TimerIcon className="h-4 w-4" />
-                    {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold font-mono text-xl">
+                    <TimerIcon className="h-5 w-5" />
+                    {formatTime(rewardTimeLeft)}
                   </div>
-                  <Progress value={rewardProgress} className="w-40 h-2 bg-white/10" />
+                  <Progress value={rewardProgress} className="w-48 h-2 bg-white/10" />
                 </div>
               </div>
 
               <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-10">
                 <div className="space-y-4 max-w-xl">
-                  <h3 className="text-4xl font-bold font-headline">Break Authorized</h3>
+                  <h3 className="text-4xl font-bold font-headline">Session Authorized</h3>
                   <p className="text-muted-foreground text-lg leading-relaxed">
-                    You have earned this window of distraction. Use the link below to access Instagram. 
+                    You've successfully focused for 1 hour. Enjoy your 10-minute break. The room will lock once the timer hits zero.
                   </p>
                 </div>
 
@@ -554,10 +562,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </div>
 
         {!isRewardActive && !isBreakOverdue && (
-          <div className="hidden md:flex flex-col gap-1 w-48 mx-4">
+          <div className="hidden md:flex flex-col gap-1 w-64 mx-4">
              <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-primary/60">
-               <span>Next Reward In</span>
-               <span>{Math.max(0, STUDY_THRESHOLD - sessionSeconds)}s</span>
+               <span>Next Reward Goal: 1h</span>
+               <span>{formatTime(Math.max(0, STUDY_THRESHOLD - sessionSeconds))} remaining</span>
              </div>
              <Progress value={studyProgress} className="h-1.5 bg-primary/10" />
           </div>
@@ -735,11 +743,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <div className="flex justify-between items-end">
                      <div>
                         <p className="text-[10px] font-bold uppercase text-muted-foreground">Focus Streak</p>
-                        <p className="text-xl font-bold font-headline">{studyProgress.toFixed(0)}%</p>
+                        <p className="text-xl font-bold font-headline">{studyProgress.toFixed(1)}%</p>
                      </div>
                      <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
                   </div>
                   <Progress value={studyProgress} className="h-2 bg-primary/10" />
+                  <p className="text-[10px] text-muted-foreground text-center">Focus for 1 hour to unlock a 10-minute Instagram session.</p>
                </Card>
             </TabsContent>
           </Tabs>
@@ -768,7 +777,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant={isSharingScreen ? 'primary' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={toggleScreenShare}>
+              <Button variant={isSharingScreen ? 'default' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={toggleScreenShare}>
                 <Monitor className="h-6 w-6" />
               </Button>
             </TooltipTrigger>
