@@ -1,8 +1,8 @@
+
 'use client';
 
 import { useState, useEffect, useRef, use, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   Mic,
   MicOff,
@@ -22,7 +22,6 @@ import {
   ExternalLink,
   ShieldAlert,
   AlertTriangle,
-  History,
   Timer as TimerIcon,
   Play,
   Pause,
@@ -33,19 +32,11 @@ import {
 
 import { Button } from '@/components/ui/button';
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
-import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
@@ -64,7 +55,7 @@ import {
   addDocumentNonBlocking,
   updateDocumentNonBlocking
 } from '@/firebase';
-import { doc, collection, serverTimestamp, query, orderBy, getDoc, increment } from 'firebase/firestore';
+import { doc, collection, serverTimestamp, query, orderBy, increment } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const STUDY_THRESHOLD = 4; // Testing threshold (4 seconds)
@@ -105,7 +96,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const rewardWindowRef = useRef<Window | null>(null);
 
   const roomRef = useMemoFirebase(() => doc(db, 'rooms', roomId), [db, roomId]);
   const { data: room, isLoading: isRoomLoading } = useDoc(roomRef);
@@ -132,13 +122,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const handleRewardUnlocked = useCallback(() => {
     setIsRewardActive(true);
     setRewardTimeLeft(REWARD_DURATION);
-    setTimeout(() => {
-      toast({
-        title: "Break Zone Unlocked!",
-        description: `Enjoy your earned social break. Protocol active.`,
-        className: "bg-emerald-500 text-white font-bold border-none",
-      });
-    }, 0);
+    toast({
+      title: "Break Zone Unlocked!",
+      description: `Enjoy your earned social break. Protocol active.`,
+      className: "bg-emerald-500 text-white font-bold border-none",
+    });
   }, [toast]);
 
   const handleBreakExpired = useCallback(() => {
@@ -146,13 +134,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     setIsBreakOverdue(true);
     setPenaltyTime(0);
     document.title = "⚠️ RETURN TO FOCUS";
-    setTimeout(() => {
-      toast({
-        title: "BREAK EXPIRED!",
-        description: "Room is now LOCKED. Return immediately.",
-        variant: "destructive",
-      });
-    }, 0);
+    toast({
+      title: "BREAK EXPIRED!",
+      description: "Room is now LOCKED. Return immediately.",
+      variant: "destructive",
+    });
   }, [toast]);
 
   // Pomodoro Effect
@@ -237,29 +223,55 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [user?.uid, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
 
+  // Media access effect - run once when unlocked/started
   useEffect(() => {
-    if ((room?.password && !isUnlocked)) return;
+    if (room?.password && !isUnlocked) return;
 
-    const getMediaPermission = async () => {
+    let currentStream: MediaStream | null = null;
+
+    const startMedia = async () => {
       try {
-        const userStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setStream(userStream);
+        currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        setStream(currentStream);
         if (videoRef.current) {
-          videoRef.current.srcObject = userStream;
+          videoRef.current.srcObject = currentStream;
         }
-        userStream.getVideoTracks().forEach((track) => (track.enabled = !isCameraOff));
-        userStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
-      } catch (error) {
-        console.error('Error accessing media:', error);
+        // Sync tracks with current state
+        currentStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
+        currentStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+      } catch (err: any) {
+        console.error('Error starting media:', err);
+        if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          toast({
+            variant: 'destructive',
+            title: 'Device Busy',
+            description: 'Could not access camera/mic. Please ensure they are not used by another tab.',
+          });
+        }
       }
     };
 
-    getMediaPermission();
+    startMedia();
     
     return () => {
-      stream?.getTracks().forEach(track => track.stop());
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, [room?.password, isUnlocked, isCameraOff, isMuted]);
+  }, [room?.password, isUnlocked]);
+
+  // Track toggle effects
+  useEffect(() => {
+    if (stream) {
+      stream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
+    }
+  }, [isCameraOff, stream]);
+
+  useEffect(() => {
+    if (stream) {
+      stream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+    }
+  }, [isMuted, stream]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -281,22 +293,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     setChatMessage('');
   };
 
-  const handleMuteToggle = () => {
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    stream?.getAudioTracks().forEach((track) => {
-      track.enabled = !nextMuted;
-    });
-  };
-
-  const handleCameraToggle = () => {
-    const nextCameraOff = !isCameraOff;
-    setIsCameraOff(nextCameraOff);
-    stream?.getVideoTracks().forEach((track) => {
-      track.enabled = !nextCameraOff;
-    });
-  };
-
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordInput.trim() === room?.password) {
@@ -312,8 +308,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   };
 
   const handleOpenInstagram = () => {
-    const win = window.open('https://instagram.com', '_blank');
-    rewardWindowRef.current = win;
+    window.open('https://instagram.com', '_blank');
   };
 
   const handleResumeStudy = () => {
@@ -632,13 +627,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
       <footer className="flex h-20 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40">
         <div className="flex items-center gap-4">
-          <Button variant={isMuted ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={handleMuteToggle}>
+          <Button variant={isMuted ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={() => setIsMuted(!isMuted)}>
             {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
           </Button>
-          <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={handleCameraToggle}>
+          <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={() => setIsCameraOff(!isCameraOff)}>
             {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
           </Button>
-          <Separator orientation="vertical" className="h-8 bg-primary/10 mx-2" />
         </div>
       </footer>
     </div>
