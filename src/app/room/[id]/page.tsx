@@ -23,7 +23,12 @@ import {
   ShieldAlert,
   AlertTriangle,
   History,
-  Timer,
+  Timer as TimerIcon,
+  Play,
+  Pause,
+  RotateCcw,
+  BookOpen,
+  Coffee,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -62,9 +67,14 @@ import {
 import { doc, collection, serverTimestamp, query, orderBy, getDoc, increment } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const STUDY_THRESHOLD = 4; 
+const STUDY_THRESHOLD = 4; // Testing threshold (4 seconds)
 const REWARD_DURATION = 10; 
 const PENALTY_GRACE_PERIOD = 5; 
+
+const POMODORO_MODES = {
+  WORK: { label: 'Focus', time: 25 * 60, icon: BookOpen },
+  BREAK: { label: 'Rest', time: 5 * 60, icon: Coffee },
+};
 
 export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = use(params);
@@ -81,6 +91,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [chatMessage, setChatMessage] = useState('');
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   
+  // Pomodoro State
+  const [pomoSeconds, setPomoSeconds] = useState(POMODORO_MODES.WORK.time);
+  const [isPomoActive, setIsPomoActive] = useState(false);
+  const [pomoMode, setPomoMode] = useState<keyof typeof POMODORO_MODES>('WORK');
+
+  // Study Reward State
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [rewardTimeLeft, setRewardTimeLeft] = useState(0);
   const [isRewardActive, setIsRewardActive] = useState(false);
@@ -139,6 +155,22 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }, 0);
   }, [toast]);
 
+  // Pomodoro Effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isPomoActive && pomoSeconds > 0) {
+      interval = setInterval(() => setPomoSeconds(s => s - 1), 1000);
+    } else if (pomoSeconds === 0) {
+      setIsPomoActive(false);
+      toast({
+        title: `${POMODORO_MODES[pomoMode].label} session complete!`,
+        description: pomoMode === 'WORK' ? "Time for a short rest." : "Ready to focus again?",
+      });
+    }
+    return () => clearInterval(interval);
+  }, [isPomoActive, pomoSeconds, pomoMode, toast]);
+
+  // Study Reward & Penalty Effect
   useEffect(() => {
     if (!user?.uid || !db || (room?.password && !isUnlocked)) return;
 
@@ -239,14 +271,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     e.preventDefault();
     if (!chatMessage.trim() || !user?.uid) return;
 
-    const userSnap = await getDoc(doc(db, 'users', user.uid));
-    const userData = userSnap.data();
-
     addDocumentNonBlocking(collection(db, 'rooms', roomId, 'messages'), {
       text: chatMessage.trim(),
       senderId: user.uid,
       senderName: user.displayName || 'Guest',
-      senderUsername: userData?.username || 'student',
       timestamp: serverTimestamp(),
     });
 
@@ -295,6 +323,18 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     document.title = "StudyParadox";
   };
 
+  const switchPomoMode = (mode: keyof typeof POMODORO_MODES) => {
+    setPomoMode(mode);
+    setPomoSeconds(POMODORO_MODES[mode].time);
+    setIsPomoActive(false);
+  };
+
+  const formatTime = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (isRoomLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -341,6 +381,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const pinnedParticipant = participants?.find(p => p.userId === pinnedId) || (pinnedId === user?.uid ? { userId: user?.uid, name: 'You', photoUrl: user?.photoURL || '' } : null);
   const studyProgress = Math.min((sessionSeconds / STUDY_THRESHOLD) * 100, 100);
   const rewardProgress = Math.max(0, Math.min((rewardTimeLeft / REWARD_DURATION) * 100, 100));
+  const pomoProgress = ((POMODORO_MODES[pomoMode].time - pomoSeconds) / POMODORO_MODES[pomoMode].time) * 100;
 
   return (
     <TooltipProvider>
@@ -404,7 +445,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold font-mono">
-                    <Timer className="h-4 w-4" />
+                    <TimerIcon className="h-4 w-4" />
                     {Math.floor(rewardTimeLeft / 60)}:{(rewardTimeLeft % 60).toString().padStart(2, '0')}
                   </div>
                   <Progress value={rewardProgress} className="w-40 h-2 bg-white/10" />
@@ -511,6 +552,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="m-2 bg-background/50">
               <TabsTrigger value="chat" className="flex-1 text-[10px] font-bold uppercase">Chat</TabsTrigger>
+              <TabsTrigger value="timer" className="flex-1 text-[10px] font-bold uppercase">Timer</TabsTrigger>
               <TabsTrigger value="rewards" className="flex-1 text-[10px] font-bold uppercase">Rewards</TabsTrigger>
             </TabsList>
 
@@ -532,6 +574,44 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <Button type="submit" size="icon" variant="ghost" className="absolute right-1 top-1 h-8 w-8 text-primary" disabled={!chatMessage.trim()}><Send className="h-4 w-4" /></Button>
                 </form>
               </div>
+            </TabsContent>
+
+            <TabsContent value="timer" className="flex-1 m-0 p-4 flex flex-col">
+               <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+                  <div className="relative h-48 w-48 flex items-center justify-center">
+                    <svg className="h-full w-full -rotate-90">
+                      <circle cx="96" cy="96" r="88" className="stroke-primary/10 fill-none" strokeWidth="8" />
+                      <circle cx="96" cy="96" r="88" className="stroke-primary fill-none transition-all duration-1000" strokeWidth="8" strokeDasharray={552.92} strokeDashoffset={552.92 * (1 - pomoProgress / 100)} strokeLinecap="round" />
+                    </svg>
+                    <div className="absolute flex flex-col items-center">
+                      <span className="text-3xl font-bold font-mono tracking-tighter">{formatTime(pomoSeconds)}</span>
+                      <span className="text-[10px] font-bold uppercase text-primary tracking-widest">{POMODORO_MODES[pomoMode].label}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button onClick={() => setIsPomoActive(!isPomoActive)} className="h-12 w-12 rounded-full">
+                      {isPomoActive ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-1" />}
+                    </Button>
+                    <Button variant="outline" onClick={() => switchPomoMode(pomoMode)} className="h-12 w-12 rounded-full border-primary/20">
+                      <RotateCcw className="h-5 w-5" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 w-full">
+                    {Object.entries(POMODORO_MODES).map(([key, config]) => (
+                      <Button 
+                        key={key} 
+                        variant={pomoMode === key ? 'secondary' : 'ghost'} 
+                        onClick={() => switchPomoMode(key as any)}
+                        className={cn("flex flex-col h-auto py-3 rounded-xl border border-transparent", pomoMode === key && "border-primary/20 bg-primary/10")}
+                      >
+                        <config.icon className="h-4 w-4 mb-1" />
+                        <span className="text-[10px] font-bold uppercase">{config.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+               </div>
             </TabsContent>
 
             <TabsContent value="rewards" className="flex-1 m-0 p-4 space-y-6">
