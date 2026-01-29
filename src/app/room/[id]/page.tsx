@@ -105,6 +105,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [penaltyTime, setPenaltyTime] = useState(0);
   
   const videoRef = useRef<HTMLVideoElement>(null);
+  const pinnedVideoRef = useRef<HTMLVideoElement>(null);
   const screenRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -275,9 +276,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       try {
         currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setStream(currentStream);
+        
         if (videoRef.current) {
           videoRef.current.srcObject = currentStream;
         }
+        if (pinnedVideoRef.current) {
+          pinnedVideoRef.current.srcObject = currentStream;
+        }
+
         currentStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
         currentStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
       } catch (err: any) {
@@ -299,6 +305,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       }
     };
   }, [room?.password, isUnlocked, toast]);
+
+  // Sync stream to pinned video if it changes
+  useEffect(() => {
+    if (pinnedId === user?.uid && stream && pinnedVideoRef.current) {
+      pinnedVideoRef.current.srcObject = stream;
+    }
+  }, [pinnedId, stream, user?.uid]);
 
   useEffect(() => {
     if (stream) {
@@ -594,7 +607,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             {pinnedId && (
               <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl">
                 {pinnedId === user?.uid ? (
-                   <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
+                   <video ref={pinnedVideoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", isCameraOff && "hidden")} />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-background/50">
                     <Avatar className="h-40 w-40 border-8 border-background">
