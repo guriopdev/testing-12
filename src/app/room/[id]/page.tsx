@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, use, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Mic,
   MicOff,
@@ -28,6 +29,11 @@ import {
   RotateCcw,
   BookOpen,
   Coffee,
+  Monitor,
+  Ban,
+  VolumeX,
+  EyeOff,
+  Crown
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -41,7 +47,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { 
@@ -73,10 +79,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const db = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
+  const router = useRouter();
 
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isSharingScreen, setIsSharingScreen] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  
   const [passwordInput, setPasswordInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
@@ -95,10 +105,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [penaltyTime, setPenaltyTime] = useState(0);
   
   const videoRef = useRef<HTMLVideoElement>(null);
+  const screenRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const roomRef = useMemoFirebase(() => doc(db, 'rooms', roomId), [db, roomId]);
   const { data: room, isLoading: isRoomLoading } = useDoc(roomRef);
+
+  const myParticipantRef = useMemoFirebase(() => user ? doc(db, 'rooms', roomId, 'participants', user.uid) : null, [db, roomId, user?.uid]);
+  const { data: myParticipantData } = useDoc(myParticipantRef);
 
   const participantsQuery = useMemoFirebase(() => collection(db, 'rooms', roomId, 'participants'), [db, roomId]);
   const { data: participants } = useCollection(participantsQuery);
@@ -108,6 +122,32 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     orderBy('timestamp', 'asc')
   ), [db, roomId]);
   const { data: messages } = useCollection(messagesQuery);
+
+  const isCreator = room?.creatorId === user?.uid;
+
+  // Watch for Admin Suppression
+  useEffect(() => {
+    if (!myParticipantData) return;
+
+    if (myParticipantData.isMutedByAdmin && !isMuted) {
+      setIsMuted(true);
+      toast({ title: "Muted by Admin", variant: "destructive" });
+    }
+
+    if (myParticipantData.isCameraOffByAdmin && !isCameraOff) {
+      setIsCameraOff(true);
+      toast({ title: "Camera disabled by Admin", variant: "destructive" });
+    }
+  }, [myParticipantData, isMuted, isCameraOff]);
+
+  // Handle Kick
+  useEffect(() => {
+    if (user && participants && !participants.some(p => p.userId === user.uid) && isUnlocked) {
+      // If I'm no longer in participants but I think I'm in the room, I might have been kicked
+      router.push('/dashboard');
+      toast({ title: "You have been removed from the room", variant: "destructive" });
+    }
+  }, [participants, user, isUnlocked]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -223,7 +263,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [user?.uid, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
 
-  // Media access effect - run once when unlocked/started
+  // Media access effect
   useEffect(() => {
     if (room?.password && !isUnlocked) return;
 
@@ -236,18 +276,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         if (videoRef.current) {
           videoRef.current.srcObject = currentStream;
         }
-        // Sync tracks with current state
         currentStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
         currentStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
       } catch (err: any) {
         console.error('Error starting media:', err);
-        if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-          toast({
-            variant: 'destructive',
-            title: 'Device Busy',
-            description: 'Could not access camera/mic. Please ensure they are not used by another tab.',
-          });
-        }
       }
     };
 
@@ -260,7 +292,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [room?.password, isUnlocked]);
 
-  // Track toggle effects
   useEffect(() => {
     if (stream) {
       stream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
@@ -305,6 +336,47 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         description: 'Please try again.',
       });
     }
+  };
+
+  const toggleScreenShare = async () => {
+    if (isSharingScreen) {
+      if (screenStream) {
+        screenStream.getTracks().forEach(t => t.stop());
+      }
+      setScreenStream(null);
+      setIsSharingScreen(false);
+    } else {
+      try {
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        setScreenStream(displayStream);
+        setIsSharingScreen(true);
+        if (screenRef.current) {
+          screenRef.current.srcObject = displayStream;
+        }
+        displayStream.getTracks()[0].onended = () => {
+          setIsSharingScreen(false);
+          setScreenStream(null);
+        };
+      } catch (err) {
+        console.error('Screen sharing error:', err);
+      }
+    }
+  };
+
+  // Admin Powers
+  const handleSuppressMic = (pId: string) => {
+    updateDocumentNonBlocking(doc(db, 'rooms', roomId, 'participants', pId), { isMutedByAdmin: true });
+    toast({ title: "Student Muted" });
+  };
+
+  const handleCloseVideo = (pId: string) => {
+    updateDocumentNonBlocking(doc(db, 'rooms', roomId, 'participants', pId), { isCameraOffByAdmin: true });
+    toast({ title: "Student Video Disabled" });
+  };
+
+  const handleKick = (pId: string) => {
+    deleteDocumentNonBlocking(doc(db, 'rooms', roomId, 'participants', pId));
+    toast({ title: "Student Kicked", variant: "destructive" });
   };
 
   const handleOpenInstagram = () => {
@@ -473,7 +545,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         <div className="flex items-center gap-3">
           <Link href="/dashboard"><ChevronRight className="h-5 w-5 text-muted-foreground rotate-180 hover:text-primary transition-colors" /></Link>
           <div className="flex flex-col">
-            <h1 className="text-sm md:text-base font-bold font-headline truncate max-w-[120px] sm:max-w-md">{room.name}</h1>
+            <h1 className="text-sm md:text-base font-bold font-headline truncate max-w-[120px] sm:max-w-md flex items-center gap-2">
+              {room.name}
+              {isCreator && <Crown className="h-3 w-3 text-amber-500" />}
+            </h1>
             <span className="text-[10px] text-primary font-bold uppercase tracking-widest">{room.topic}</span>
           </div>
         </div>
@@ -498,6 +573,16 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
           <div className="mx-auto max-w-7xl flex flex-col gap-4">
+            {/* Screen Share View */}
+            {isSharingScreen && (
+              <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-black border-2 border-primary shadow-2xl">
+                 <video ref={screenRef} autoPlay playsInline className="h-full w-full object-contain" />
+                 <div className="absolute top-4 left-4 bg-primary text-primary-foreground text-[10px] font-bold uppercase px-2 py-1 rounded-md">
+                   Screen Sharing Active
+                 </div>
+              </div>
+            )}
+
             {pinnedId && (
               <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-card border-2 border-primary/30 shadow-2xl">
                 {pinnedId === user?.uid ? (
@@ -514,7 +599,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               </div>
             )}
 
-            <div className={cn("grid gap-4", pinnedId ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+            <div className={cn("grid gap-4", pinnedId || isSharingScreen ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
+              {/* Local Participant Card */}
               <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
                 <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", (isCameraOff || pinnedId === user?.uid) && "hidden")} />
                 {(isCameraOff || pinnedId === user?.uid) && (
@@ -523,18 +609,52 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   </div>
                 )}
                 <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
-                   <span className="text-[10px] font-bold px-2">You</span>
+                   <span className="text-[10px] font-bold px-2 flex items-center gap-1">
+                     You {isCreator && <Crown className="h-2 w-2 text-amber-500" />}
+                   </span>
                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPinnedId(user?.uid || '')}><Pin className="h-3 w-3" /></Button>
                 </div>
               </div>
 
+              {/* Remote Participant Cards */}
               {participants?.filter(p => p.userId !== user?.uid).map((p) => (
-                <div key={p.id} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
+                <div key={p.userId} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
-                    <Avatar className="h-20 w-20 border-4 border-background"><AvatarImage src={p.photoUrl} /><AvatarFallback>{p.name.charAt(0)}</AvatarFallback></Avatar>
+                    <Avatar className="h-20 w-20 border-4 border-background">
+                      <AvatarImage src={p.photoUrl} />
+                      <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
                   </div>
+                  
+                  {/* Admin Overlay on Hover */}
+                  {isCreator && (
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleSuppressMic(p.userId)}><VolumeX className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Mute student</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleCloseVideo(p.userId)}><EyeOff className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Disable video</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleKick(p.userId)}><Ban className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Kick from room</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
+
                   <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
-                    <span className="text-[10px] font-bold px-2 truncate">{p.name}</span>
+                    <span className="text-[10px] font-bold px-2 truncate flex items-center gap-1">
+                      {p.name}
+                      {p.isMuted && <MicOff className="h-2 w-2 text-red-500" />}
+                    </span>
                     <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPinnedId(p.userId)}><Pin className="h-3 w-3" /></Button>
                   </div>
                 </div>
@@ -543,6 +663,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </div>
         </main>
 
+        {/* Sidebar Controls */}
         <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-2xl">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="m-2 bg-background/50">
@@ -625,14 +746,34 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </aside>
       </div>
 
-      <footer className="flex h-20 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40">
+      <footer className="flex h-24 items-center justify-center border-t border-primary/10 bg-card/80 backdrop-blur-2xl px-4 z-40">
         <div className="flex items-center gap-4">
-          <Button variant={isMuted ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={() => setIsMuted(!isMuted)}>
-            {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </Button>
-          <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-12 w-12" onClick={() => setIsCameraOff(!isCameraOff)}>
-            {isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant={isMuted ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={() => setIsMuted(!isMuted)}>
+                {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isMuted ? 'Unmute' : 'Mute'}</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={() => setIsCameraOff(!isCameraOff)}>
+                {isCameraOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant={isSharingScreen ? 'primary' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={toggleScreenShare}>
+                <Monitor className="h-6 w-6" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isSharingScreen ? 'Stop Sharing' : 'Share Screen'}</TooltipContent>
+          </Tooltip>
         </div>
       </footer>
     </div>

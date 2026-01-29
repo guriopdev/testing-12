@@ -46,6 +46,8 @@
         "photoUrl": { "type": "string" },
         "isMuted": { "type": "boolean" },
         "isCameraOff": { "type": "boolean" },
+        "isMutedByAdmin": { "type": "boolean", "default": false },
+        "isCameraOffByAdmin": { "type": "boolean", "default": false },
         "joinedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "name"]

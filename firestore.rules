@@ -31,7 +31,12 @@ service cloud.firestore {
       
       match /participants/{participantId} {
         allow read, list: if isSignedIn();
-        allow create, update, delete: if isSignedIn() && participantId == request.auth.uid;
+        allow create: if isSignedIn() && participantId == request.auth.uid;
+        // Allow creator to manage participants (mute, kick, etc)
+        allow update, delete: if isSignedIn() && (
+          participantId == request.auth.uid || 
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.creatorId == request.auth.uid
+        );
       }
       
       match /messages/{messageId} {
@@ -46,17 +51,11 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
     }
 
-    // Direct Messaging - Optimized for queries and participant access
+    // Direct Messaging
     match /directChats/{chatId} {
-      // Simplified list/read rule to support array-contains queries
       allow read, list: if isSignedIn() && request.auth.uid in resource.data.participantIds;
-      
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.participantIds;
-      
-      allow update: if isSignedIn() && (
-        request.auth.uid in resource.data.participantIds
-      );
-      
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participantIds;
       allow delete: if isSignedIn() && request.auth.uid in resource.data.participantIds;
 
       match /messages/{messageId} {
