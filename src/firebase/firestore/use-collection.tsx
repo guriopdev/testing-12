@@ -61,31 +61,27 @@ export function useCollection<T = any>(
       memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
         const results: ResultItemType[] = [];
-        for (const doc of snapshot.docs) {
-          results.push({ ...(doc.data() as T), id: doc.id });
+        for (const docSnapshot of snapshot.docs) {
+          results.push({ ...(docSnapshot.data() as T), id: docSnapshot.id });
         }
         setData(results);
         setError(null);
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // More robust path extraction for different SDK versions and Query objects
+        // Robust path extraction for better error surfacing
         let path = 'unknown';
-        if (memoizedTargetRefOrQuery) {
-          try {
-            if ('path' in memoizedTargetRefOrQuery) {
-              path = (memoizedTargetRefOrQuery as any).path;
-            } else if ('_query' in memoizedTargetRefOrQuery) {
-              const q = (memoizedTargetRefOrQuery as any)._query;
-              if (q.path) {
-                path = q.path.toArray().join('/');
-              }
-            } else if ((memoizedTargetRefOrQuery as any).converter?.path) {
-              path = (memoizedTargetRefOrQuery as any).converter.path;
+        try {
+          if ('path' in memoizedTargetRefOrQuery) {
+            path = (memoizedTargetRefOrQuery as any).path;
+          } else if ('_query' in memoizedTargetRefOrQuery) {
+            const q = (memoizedTargetRefOrQuery as any)._query;
+            if (q.path) {
+              path = q.path.toArray().join('/');
             }
-          } catch (e) {
-            path = 'collection-query';
           }
+        } catch (e) {
+          path = 'collection-query';
         }
 
         const contextualError = new FirestorePermissionError({
