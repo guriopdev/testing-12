@@ -148,7 +148,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       setIsCameraOff(true);
       toast({ title: "Camera disabled by Admin", variant: "destructive" });
     }
-  }, [myParticipantData, isMuted, isCameraOff]);
+  }, [myParticipantData, isMuted, isCameraOff, toast]);
 
   // Handle Kick
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       router.push('/dashboard');
       toast({ title: "You have been removed from the room", variant: "destructive" });
     }
-  }, [participants, user?.uid, isUnlocked]);
+  }, [participants, user?.uid, isUnlocked, router, toast]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -310,12 +310,24 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [room?.password, isUnlocked, toast]);
 
-  // Ensure pinned local video works
+  // Sync Video Streams to Elements (Handling conditional rendering)
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
   useEffect(() => {
     if (pinnedId === user?.uid && stream && pinnedVideoRef.current) {
       pinnedVideoRef.current.srcObject = stream;
     }
   }, [pinnedId, stream, user?.uid]);
+
+  useEffect(() => {
+    if (isSharingScreen && screenStream && screenRef.current) {
+      screenRef.current.srcObject = screenStream;
+    }
+  }, [isSharingScreen, screenStream]);
 
   // Sync track states
   useEffect(() => {
@@ -415,9 +427,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         setScreenStream(displayStream);
         setIsSharingScreen(true);
-        if (screenRef.current) {
-          screenRef.current.srcObject = displayStream;
-        }
+        
         displayStream.getTracks()[0].onended = () => {
           setIsSharingScreen(false);
           setScreenStream(null);
