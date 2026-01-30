@@ -3,11 +3,12 @@
 
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Trophy, Medal, Star, Target, Loader2, Award } from 'lucide-react';
+import { Trophy, Medal, Loader2, Award } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
 
 export default function LeaderboardPage() {
   const { user } = useUser();
@@ -50,7 +51,7 @@ export default function LeaderboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Stats Summary Card */}
-        <Card className="md:col-span-1 bg-card/40 border-primary/10 backdrop-blur-xl flex flex-col justify-center text-center p-6">
+        <Card className="md:col-span-1 bg-card/40 border-primary/10 backdrop-blur-xl flex flex-col justify-center text-center p-6 h-fit">
            <CardHeader className="p-0 mb-4">
              <CardTitle className="text-sm font-bold uppercase tracking-widest text-primary">Your Focus</CardTitle>
            </CardHeader>
@@ -72,7 +73,6 @@ export default function LeaderboardPage() {
             <div className="grid gap-3">
               {leaders.map((student, index) => {
                 const rankInfo = getRankBadge(student.totalStudySeconds);
-                const isTopThree = index < 3;
                 const isCurrentUser = student.id === user?.uid;
 
                 return (
@@ -85,27 +85,31 @@ export default function LeaderboardPage() {
                     )}
                   >
                     <CardContent className="flex items-center gap-4 p-4">
-                      <div className="flex items-center justify-center w-8 text-lg font-bold font-headline text-muted-foreground">
+                      <div className="flex items-center justify-center w-8 text-lg font-bold font-headline text-muted-foreground shrink-0">
                         {index === 0 ? <Medal className="h-6 w-6 text-amber-500" /> : 
                          index === 1 ? <Medal className="h-6 w-6 text-slate-300" /> : 
                          index === 2 ? <Medal className="h-6 w-6 text-amber-700" /> : 
                          index + 1}
                       </div>
 
-                      <Avatar className={cn("h-12 w-12 border-2", isCurrentUser ? "border-primary" : "border-primary/10")}>
-                        <AvatarImage src={student.photoUrl} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{student.displayName?.charAt(0)}</AvatarFallback>
-                      </Avatar>
+                      <Link href={`/dashboard/profile/${student.id}`} className="shrink-0 hover:scale-110 transition-transform">
+                        <Avatar className={cn("h-12 w-12 border-2", isCurrentUser ? "border-primary" : "border-primary/10")}>
+                          <AvatarImage src={student.photoUrl} />
+                          <AvatarFallback className="bg-primary/10 text-primary font-bold">{student.displayName?.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                      </Link>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-bold truncate text-foreground">{student.displayName}</p>
-                          {isCurrentUser && <Badge className="bg-primary text-primary-foreground text-[8px] h-4">You</Badge>}
+                          <Link href={`/dashboard/profile/${student.id}`} className="hover:text-primary transition-colors truncate">
+                            <p className="font-bold truncate text-foreground">{student.displayName}</p>
+                          </Link>
+                          {isCurrentUser && <Badge className="bg-primary text-primary-foreground text-[8px] h-4 shrink-0">You</Badge>}
                         </div>
                         <p className="text-[10px] text-primary/60 font-mono">@{student.username}</p>
                       </div>
 
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="flex flex-col items-end gap-1 shrink-0">
                         <span className="text-sm font-bold font-headline">{formatStudyTime(student.totalStudySeconds)}</span>
                         <Badge variant="outline" className={cn("text-[8px] uppercase font-bold tracking-tighter border-none px-2", rankInfo.color)}>
                           {rankInfo.label}

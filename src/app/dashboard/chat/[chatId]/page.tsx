@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useRef, useEffect, use } from 'react';
-import { useUser, useFirestore, useCollection, useDoc, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
-import { collection, query, orderBy, doc, serverTimestamp, where, getDocs, writeBatch } from 'firebase/firestore';
+import { useUser, useFirestore, useCollection, useDoc, useMemoFirebase, updateDocumentNonBlocking, addDocumentNonBlocking } from '@/firebase';
+import { collection, query, orderBy, doc, serverTimestamp } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,9 +30,9 @@ export default function DirectChatPage({ params }: { params: Promise<{ chatId: s
   ), [db, chatId]);
   const { data: messages } = useCollection(messagesQuery);
 
-  // Mark messages as read when they appear
+  // Mark messages as read
   useEffect(() => {
-    if (!user || !messages || messages.length === 0) return;
+    if (!user?.uid || !messages || messages.length === 0) return;
 
     const unreadMessages = messages.filter(m => m.senderId !== user.uid && !m.read);
     if (unreadMessages.length > 0) {
@@ -42,9 +42,8 @@ export default function DirectChatPage({ params }: { params: Promise<{ chatId: s
         });
       });
     }
-  }, [messages, user, db, chatId]);
+  }, [messages, user?.uid, db, chatId]);
 
-  // Fetch other participant info for online status
   const otherParticipantId = chat?.participantIds?.find((id: string) => id !== user?.uid);
   const otherUserRef = useMemoFirebase(() => otherParticipantId ? doc(db, 'users', otherParticipantId) : null, [db, otherParticipantId]);
   const { data: otherUserData } = useDoc(otherUserRef);
@@ -88,7 +87,7 @@ export default function DirectChatPage({ params }: { params: Promise<{ chatId: s
             <Link href="/dashboard/messages"><ArrowLeft className="h-5 w-5" /></Link>
           </Button>
           <div className="flex items-center gap-3">
-            <div className="relative">
+            <Link href={otherParticipantId ? `/dashboard/profile/${otherParticipantId}` : "#"} className="relative hover:scale-105 transition-transform">
               <Avatar className="h-10 w-10 border border-primary/20">
                 <AvatarImage src={otherUserData?.photoUrl} />
                 <AvatarFallback className="bg-primary/20 text-primary">{otherUserData?.displayName?.charAt(0)}</AvatarFallback>
@@ -97,9 +96,11 @@ export default function DirectChatPage({ params }: { params: Promise<{ chatId: s
                 "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card",
                 isOnline ? "bg-emerald-500" : "bg-muted-foreground"
               )} />
-            </div>
+            </Link>
             <div className="flex flex-col">
-              <CardTitle className="text-lg font-headline">{otherUserData?.displayName || 'Direct Conversation'}</CardTitle>
+              <Link href={otherParticipantId ? `/dashboard/profile/${otherParticipantId}` : "#"} className="hover:text-primary transition-colors">
+                <CardTitle className="text-lg font-headline">{otherUserData?.displayName || 'Direct Conversation'}</CardTitle>
+              </Link>
               <p className="text-[10px] text-primary font-bold uppercase tracking-widest">
                 {isOnline ? 'Online Now' : 'Offline'}
               </p>

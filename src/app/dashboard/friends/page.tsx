@@ -1,6 +1,6 @@
+
 'use client';
 
-import { useState } from 'react';
 import { useUser, useFirestore, useCollection, useMemoFirebase, updateDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MessageSquare, UserPlus, UserCheck, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function FriendsPage() {
   const { user } = useUser();
@@ -100,14 +101,18 @@ export default function FriendsPage() {
               const friendPhoto = isSender ? f.receiverPhoto : f.senderPhoto;
 
               return (
-                <Card key={f.id} className="bg-card/40 border-primary/10 backdrop-blur-sm">
+                <Card key={f.id} className="bg-card/40 border-primary/10 backdrop-blur-sm group hover:border-primary/40 transition-all">
                   <CardHeader className="flex flex-row items-center gap-4 pb-2">
-                    <Avatar className="h-12 w-12 border border-primary/20">
-                      <AvatarImage src={friendPhoto} />
-                      <AvatarFallback className="bg-primary/20 text-primary">{friendName?.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <CardTitle className="text-lg font-headline">{friendName}</CardTitle>
+                    <Link href={`/dashboard/profile/${friendId}`} className="shrink-0 hover:scale-110 transition-transform">
+                      <Avatar className="h-12 w-12 border border-primary/20">
+                        <AvatarImage src={friendPhoto} />
+                        <AvatarFallback className="bg-primary/20 text-primary">{friendName?.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/dashboard/profile/${friendId}`} className="hover:text-primary transition-colors">
+                        <CardTitle className="text-lg font-headline truncate">{friendName}</CardTitle>
+                      </Link>
                       <CardDescription className="text-xs text-primary/60 font-bold uppercase tracking-widest">Connected</CardDescription>
                     </div>
                   </CardHeader>
@@ -140,12 +145,16 @@ export default function FriendsPage() {
               <Card key={req.id} className="bg-card/40 border-primary/10">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={req.senderPhoto} />
-                      <AvatarFallback className="bg-primary/20 text-primary">{req.senderName?.charAt(0)}</AvatarFallback>
-                    </Avatar>
+                    <Link href={`/dashboard/profile/${req.senderId}`} className="hover:scale-110 transition-transform">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={req.senderPhoto} />
+                        <AvatarFallback className="bg-primary/20 text-primary">{req.senderName?.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                    </Link>
                     <div>
-                      <p className="font-bold">{req.senderName}</p>
+                      <Link href={`/dashboard/profile/${req.senderId}`} className="hover:text-primary transition-colors">
+                        <p className="font-bold">{req.senderName}</p>
+                      </Link>
                       <p className="text-xs text-muted-foreground">Wants to be your study partner</p>
                     </div>
                   </div>
@@ -170,11 +179,15 @@ export default function FriendsPage() {
                 <Card key={req.id} className="bg-card/20 border-primary/5 opacity-80">
                   <CardContent className="flex items-center justify-between p-4">
                     <div className="flex items-center gap-4">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={req.receiverPhoto} />
-                        <AvatarFallback>{req.receiverName?.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <p className="text-sm font-medium">{req.receiverName || 'Pending Student'}</p>
+                      <Link href={`/dashboard/profile/${req.receiverId}`}>
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={req.receiverPhoto} />
+                          <AvatarFallback>{req.receiverName?.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                      </Link>
+                      <Link href={`/dashboard/profile/${req.receiverId}`} className="hover:text-primary transition-colors">
+                        <p className="text-sm font-medium">{req.receiverName || 'Pending Student'}</p>
+                      </Link>
                     </div>
                     <Button size="sm" variant="ghost" onClick={() => handleDeclineRequest(req.id)} className="text-muted-foreground">
                       Cancel
