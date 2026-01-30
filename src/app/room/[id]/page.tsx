@@ -33,7 +33,9 @@ import {
   Ban,
   VolumeX,
   EyeOff,
-  Crown
+  Crown,
+  Settings,
+  Volume2
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -92,6 +94,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [chatMessage, setChatMessage] = useState('');
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   
+  // Mic Test State
+  const [isTestingMic, setIsTestingMic] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
   // Pomodoro State
   const [pomoSeconds, setPomoSeconds] = useState(POMODORO_MODES.WORK.time);
   const [isPomoActive, setIsPomoActive] = useState(false);
@@ -204,7 +213,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       if (!isRewardActive && !isBreakOverdue) {
         setSessionSeconds((prev) => {
           const next = prev + 1;
-          // Every minute, update the cumulative study time
           if (next % 60 === 0) {
             updateDocumentNonBlocking(doc(db, 'users', user.uid), {
               totalStudySeconds: increment(60)
@@ -229,10 +237,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       else if (isBreakOverdue) {
         setPenaltyTime((prev) => {
           const next = prev + 1;
-          // After grace period, deduct points every second
           if (next > PENALTY_GRACE_PERIOD) {
              updateDocumentNonBlocking(doc(db, 'users', user.uid), {
-               totalStudySeconds: increment(-10) // 10s penalty per 1s delay
+               totalStudySeconds: increment(-10)
              });
           }
           return next;
@@ -243,25 +250,21 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     return () => clearInterval(interval);
   }, [user?.uid, db, room?.password, isUnlocked, isRewardActive, isBreakOverdue, handleRewardUnlocked, handleBreakExpired]);
 
+  // Sync Participant Status to Firestore
   useEffect(() => {
     if (!user?.uid || !db || !roomId || (room?.password && !isUnlocked)) return;
 
-    const syncParticipant = async () => {
-      const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
-      setDocumentNonBlocking(participantRef, {
-        userId: user.uid,
-        name: user.displayName || 'Guest',
-        photoUrl: user.photoURL || '',
-        isMuted,
-        isCameraOff,
-        joinedAt: serverTimestamp(),
-      }, { merge: true });
-    };
-
-    syncParticipant();
+    const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
+    setDocumentNonBlocking(participantRef, {
+      userId: user.uid,
+      name: user.displayName || 'Guest',
+      photoUrl: user.photoURL || '',
+      isMuted,
+      isCameraOff,
+      joinedAt: serverTimestamp(),
+    }, { merge: true });
 
     return () => {
-      const participantRef = doc(db, 'rooms', roomId, 'participants', user.uid);
       deleteDocumentNonBlocking(participantRef);
     };
   }, [user?.uid, db, roomId, isMuted, isCameraOff, room?.password, isUnlocked]);
@@ -274,24 +277,25 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
     const startMedia = async () => {
       try {
-        currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        currentStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 1280, height: 720 }, 
+          audio: { echoCancellation: true, noiseSuppression: true } 
+        });
         setStream(currentStream);
         
         if (videoRef.current) {
           videoRef.current.srcObject = currentStream;
         }
-        if (pinnedVideoRef.current) {
-          pinnedVideoRef.current.srcObject = currentStream;
-        }
 
         currentStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
         currentStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
       } catch (err: any) {
+        console.error('Media error:', err);
         if (err.name === 'NotReadableError') {
           toast({
             variant: "destructive",
-            title: "Camera Busy",
-            description: "Your camera is being used by another app or tab.",
+            title: "Hardware Conflict",
+            description: "Your camera or microphone is in use by another application.",
           });
         }
       }
@@ -306,13 +310,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [room?.password, isUnlocked, toast]);
 
-  // Sync stream to pinned video if it changes
+  // Ensure pinned local video works
   useEffect(() => {
     if (pinnedId === user?.uid && stream && pinnedVideoRef.current) {
       pinnedVideoRef.current.srcObject = stream;
     }
   }, [pinnedId, stream, user?.uid]);
 
+  // Sync track states
   useEffect(() => {
     if (stream) {
       stream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
@@ -324,6 +329,45 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       stream.getAudioTracks().forEach(t => t.enabled = !isMuted);
     }
   }, [isMuted, stream]);
+
+  // Mic Test Logic
+  const startMicTest = useCallback(() => {
+    if (!stream || isTestingMic) return;
+    
+    setIsTestingMic(true);
+    const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    
+    audioContextRef.current = context;
+    analyserRef.current = analyser;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const updateLevel = () => {
+      analyser.getByteFrequencyData(dataArray);
+      let values = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        values += dataArray[i];
+      }
+      const average = values / dataArray.length;
+      setAudioLevel(average);
+      animationFrameRef.current = requestAnimationFrame(updateLevel);
+    };
+    updateLevel();
+  }, [stream, isTestingMic]);
+
+  const stopMicTest = useCallback(() => {
+    setIsTestingMic(false);
+    setAudioLevel(0);
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    if (audioContextRef.current) audioContextRef.current.close();
+  }, []);
+
+  useEffect(() => {
+    return () => stopMicTest();
+  }, [stopMicTest]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -493,12 +537,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <ShieldAlert className="h-12 w-12 text-primary" />
                 )}
               </div>
-              
               <div className="space-y-3">
-                <h2 className={cn(
-                  "text-4xl font-headline font-bold",
-                  penaltyTime > PENALTY_GRACE_PERIOD ? "text-red-500" : "text-foreground"
-                )}>
+                <h2 className={cn("text-4xl font-headline font-bold", penaltyTime > PENALTY_GRACE_PERIOD ? "text-red-500" : "text-foreground")}>
                   {penaltyTime > PENALTY_GRACE_PERIOD ? "STREAK BLEEDING" : "BREAK EXPIRED"}
                 </h2>
                 <p className="text-muted-foreground text-lg">
@@ -507,11 +547,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     : "Your allocated distraction window has closed. Resume your session to avoid point deduction."}
                 </p>
               </div>
-
-              <Button onClick={handleResumeStudy} size="lg" className={cn(
-                "w-full h-16 text-xl font-bold rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95",
-                penaltyTime > PENALTY_GRACE_PERIOD ? "bg-red-500 text-white hover:bg-red-600" : "bg-primary text-primary-foreground"
-              )}>
+              <Button onClick={handleResumeStudy} size="lg" className={cn("w-full h-16 text-xl font-bold rounded-2xl shadow-xl transition-all hover:scale-105 active:scale-95", penaltyTime > PENALTY_GRACE_PERIOD ? "bg-red-500 text-white hover:bg-red-600" : "bg-primary text-primary-foreground")}>
                 Stop Penalty & Resume
               </Button>
            </Card>
@@ -539,15 +575,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <Progress value={rewardProgress} className="w-48 h-2 bg-white/10" />
                 </div>
               </div>
-
               <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-10">
                 <div className="space-y-4 max-w-xl">
                   <h3 className="text-4xl font-bold font-headline">Session Authorized</h3>
                   <p className="text-muted-foreground text-lg leading-relaxed">
-                    You've successfully focused for 1 hour. Enjoy your 10-minute break. The room will lock once the timer hits zero.
+                    You've successfully focused for 1 hour. Enjoy your 10-minute break.
                   </p>
                 </div>
-
                 <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
                   <Button onClick={handleOpenInstagram} size="lg" className="h-20 px-12 bg-emerald-500 text-white font-bold text-2xl hover:bg-emerald-600 rounded-3xl shadow-2xl shadow-emerald-500/20 transition-all hover:scale-105 group">
                     <ExternalLink className="mr-3 h-7 w-7 transition-transform group-hover:rotate-12" />
@@ -594,7 +628,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       <div className="flex flex-1 overflow-hidden relative">
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-b from-transparent to-primary/5">
           <div className="mx-auto max-w-7xl flex flex-col gap-4">
-            {/* Screen Share View */}
             {isSharingScreen && (
               <div className="relative aspect-video max-h-[70vh] w-full overflow-hidden rounded-3xl bg-black border-2 border-primary shadow-2xl">
                  <video ref={screenRef} autoPlay playsInline className="h-full w-full object-contain" />
@@ -621,10 +654,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             )}
 
             <div className={cn("grid gap-4", pinnedId || isSharingScreen ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
-              {/* Local Participant Card */}
               <div className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
-                <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", (isCameraOff || pinnedId === user?.uid) && "hidden")} />
-                {(isCameraOff || pinnedId === user?.uid) && (
+                <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", (isCameraOff || (pinnedId === user?.uid && !isSharingScreen)) && "hidden")} />
+                {(isCameraOff || (pinnedId === user?.uid && !isSharingScreen)) && (
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
                     <Avatar className="h-16 w-16 border-2 border-background"><AvatarImage src={user?.photoURL || ''} /><AvatarFallback>{user?.displayName?.charAt(0)}</AvatarFallback></Avatar>
                   </div>
@@ -637,7 +669,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 </div>
               </div>
 
-              {/* Remote Participant Cards */}
               {participants?.filter(p => p.userId !== user?.uid).map((p) => (
                 <div key={p.userId} className="relative aspect-video overflow-hidden rounded-2xl bg-card border border-primary/10 group">
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
@@ -646,31 +677,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
                     </Avatar>
                   </div>
-                  
-                  {/* Admin Overlay on Hover */}
                   {isCreator && (
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleSuppressMic(p.userId)}><VolumeX className="h-4 w-4" /></Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Mute student</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleCloseVideo(p.userId)}><EyeOff className="h-4 w-4" /></Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Disable video</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleKick(p.userId)}><Ban className="h-4 w-4" /></Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Kick from room</TooltipContent>
-                      </Tooltip>
+                      <Tooltip><TooltipTrigger asChild><Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleSuppressMic(p.userId)}><VolumeX className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Mute student</TooltipContent></Tooltip>
+                      <Tooltip><TooltipTrigger asChild><Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleCloseVideo(p.userId)}><EyeOff className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Disable video</TooltipContent></Tooltip>
+                      <Tooltip><TooltipTrigger asChild><Button size="icon" variant="destructive" className="h-8 w-8 rounded-full" onClick={() => handleKick(p.userId)}><Ban className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Kick from room</TooltipContent></Tooltip>
                     </div>
                   )}
-
                   <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
                     <span className="text-[10px] font-bold px-2 truncate flex items-center gap-1">
                       {p.name}
@@ -684,13 +697,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           </div>
         </main>
 
-        {/* Sidebar Controls */}
         <aside className="hidden lg:flex w-80 flex-col border-l border-primary/10 bg-card/40 backdrop-blur-3xl shadow-2xl">
           <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="m-2 bg-background/50">
               <TabsTrigger value="chat" className="flex-1 text-[10px] font-bold uppercase">Chat</TabsTrigger>
               <TabsTrigger value="timer" className="flex-1 text-[10px] font-bold uppercase">Timer</TabsTrigger>
-              <TabsTrigger value="rewards" className="flex-1 text-[10px] font-bold uppercase">Rewards</TabsTrigger>
+              <TabsTrigger value="settings" className="flex-1 text-[10px] font-bold uppercase">Test</TabsTrigger>
             </TabsList>
 
             <TabsContent value="chat" className="flex-1 flex flex-col m-0 overflow-hidden">
@@ -725,7 +737,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       <span className="text-[10px] font-bold uppercase text-primary tracking-widest">{POMODORO_MODES[pomoMode].label}</span>
                     </div>
                   </div>
-
                   <div className="flex gap-2">
                     <Button onClick={() => setIsPomoActive(!isPomoActive)} className="h-12 w-12 rounded-full">
                       {isPomoActive ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-1" />}
@@ -734,15 +745,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                       <RotateCcw className="h-5 w-5" />
                     </Button>
                   </div>
-
                   <div className="grid grid-cols-2 gap-2 w-full">
                     {Object.entries(POMODORO_MODES).map(([key, config]) => (
-                      <Button 
-                        key={key} 
-                        variant={pomoMode === key ? 'secondary' : 'ghost'} 
-                        onClick={() => switchPomoMode(key as any)}
-                        className={cn("flex flex-col h-auto py-3 rounded-xl border border-transparent", pomoMode === key && "border-primary/20 bg-primary/10")}
-                      >
+                      <Button key={key} variant={pomoMode === key ? 'secondary' : 'ghost'} onClick={() => switchPomoMode(key as any)} className={cn("flex flex-col h-auto py-3 rounded-xl border border-transparent", pomoMode === key && "border-primary/20 bg-primary/10")}>
                         <config.icon className="h-4 w-4 mb-1" />
                         <span className="text-[10px] font-bold uppercase">{config.label}</span>
                       </Button>
@@ -751,17 +756,45 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                </div>
             </TabsContent>
 
-            <TabsContent value="rewards" className="flex-1 m-0 p-4 space-y-6">
-               <Card className="bg-background/40 border-primary/10 p-4 space-y-4">
-                  <div className="flex justify-between items-end">
-                     <div>
-                        <p className="text-[10px] font-bold uppercase text-muted-foreground">Focus Streak</p>
-                        <p className="text-xl font-bold font-headline">{studyProgress.toFixed(1)}%</p>
-                     </div>
-                     <Trophy className={cn("h-8 w-8", sessionSeconds >= STUDY_THRESHOLD ? "text-emerald-500" : "text-muted-foreground/20")} />
+            <TabsContent value="settings" className="flex-1 m-0 p-4 space-y-6">
+               <Card className="bg-background/40 border-primary/10 p-6 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Volume2 className="h-5 w-5 text-primary" />
+                    </div>
+                    <h3 className="font-headline font-bold">Hardware Test</h3>
                   </div>
-                  <Progress value={studyProgress} className="h-2 bg-primary/10" />
-                  <p className="text-[10px] text-muted-foreground text-center">Focus for 1 hour to unlock a 10-minute Instagram session.</p>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      <span>Microphone Level</span>
+                      <span className={cn(audioLevel > 10 ? "text-emerald-500" : "text-primary/40")}>
+                        {audioLevel > 10 ? "Active" : "Silent"}
+                      </span>
+                    </div>
+                    
+                    <div className="h-3 w-full bg-secondary rounded-full overflow-hidden border border-white/5 relative">
+                       <div 
+                         className="h-full bg-gradient-to-r from-primary/50 to-primary transition-all duration-75" 
+                         style={{ width: `${Math.min(audioLevel * 1.5, 100)}%` }}
+                       />
+                       <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                         {[...Array(10)].map((_, i) => <div key={i} className="h-full w-px bg-white mx-auto" />)}
+                       </div>
+                    </div>
+
+                    <Button 
+                      variant={isTestingMic ? "destructive" : "secondary"} 
+                      className="w-full h-12 font-bold rounded-xl"
+                      onClick={isTestingMic ? stopMicTest : startMicTest}
+                    >
+                      {isTestingMic ? "Stop Mic Test" : "Start Mic Test"}
+                    </Button>
+                    
+                    <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
+                      Speak into your microphone. If the bar moves, your study partners can hear you.
+                    </p>
+                  </div>
                </Card>
             </TabsContent>
           </Tabs>
@@ -778,7 +811,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </TooltipTrigger>
             <TooltipContent>{isMuted ? 'Unmute' : 'Mute'}</TooltipContent>
           </Tooltip>
-
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant={isCameraOff ? 'destructive' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={() => setIsCameraOff(!isCameraOff)}>
@@ -787,7 +819,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             </TooltipTrigger>
             <TooltipContent>{isCameraOff ? 'Start Camera' : 'Stop Camera'}</TooltipContent>
           </Tooltip>
-
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant={isSharingScreen ? 'default' : 'secondary'} size="icon" className="rounded-full h-14 w-14 shadow-xl" onClick={toggleScreenShare}>
