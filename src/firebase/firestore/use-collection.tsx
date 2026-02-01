@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -9,6 +10,8 @@ import {
   QuerySnapshot,
   CollectionReference,
 } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 /** Utility type to add an 'id' field to a given type T. */
 export type WithId<T> = T & { id: string };
@@ -21,10 +24,6 @@ export interface UseCollectionResult<T> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- *
- * IMPORTANT:
- * - The input MUST be memoized using useMemoFirebase
- * - This hook must NOT construct custom permission errors
  */
 export function useCollection<T = any>(
   memoizedTargetRefOrQuery:
@@ -40,7 +39,6 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | null>(null);
 
   useEffect(() => {
-    // ⛔ Do nothing until query/ref exists (auth not ready)
     if (!memoizedTargetRefOrQuery) {
       setData(null);
       setIsLoading(false);
@@ -50,6 +48,14 @@ export function useCollection<T = any>(
 
     setIsLoading(true);
     setError(null);
+
+    // Extract a usable path for debugging errors
+    let path = 'unknown';
+    if ('path' in memoizedTargetRefOrQuery) {
+      path = (memoizedTargetRefOrQuery as any).path;
+    } else if ((memoizedTargetRefOrQuery as any)._query?.path) {
+      path = (memoizedTargetRefOrQuery as any)._query.path.segments.join('/');
+    }
 
     const unsubscribe = onSnapshot(
       memoizedTargetRefOrQuery,
@@ -61,21 +67,26 @@ export function useCollection<T = any>(
 
         setData(results);
         setIsLoading(false);
+        setError(null);
       },
       (err: FirestoreError) => {
-        // ✅ Use Firestore error directly (safe + correct)
-        console.error('Firestore error:', err);
+        const contextualError = new FirestorePermissionError({
+          operation: 'list',
+          path: path,
+        });
 
         setError(err);
         setData(null);
         setIsLoading(false);
+
+        // Emit global error for the listener
+        errorEmitter.emit('permission-error', contextualError);
       }
     );
 
     return () => unsubscribe();
   }, [memoizedTargetRefOrQuery]);
 
-  // 🚨 Enforce memoization (dev safety)
   if (memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
     throw new Error(
       'Firestore target was not properly memoized using useMemoFirebase.'

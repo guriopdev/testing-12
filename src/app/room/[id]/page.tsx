@@ -287,6 +287,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           videoRef.current.srcObject = currentStream;
         }
 
+        // Initialize track states
         currentStream.getVideoTracks().forEach(t => t.enabled = !isCameraOff);
         currentStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
       } catch (err: any) {
@@ -295,7 +296,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
           toast({
             variant: "destructive",
             title: "Hardware Conflict",
-            description: "Your camera or microphone is in use by another application.",
+            description: "Your camera or microphone is in use by another application. Please close other meeting apps.",
           });
         }
       }
@@ -310,7 +311,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [room?.password, isUnlocked, toast]);
 
-  // Sync Video Streams to Elements (Handling conditional rendering)
+  // Sync Video Streams to Elements
   useEffect(() => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
@@ -343,38 +344,63 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }, [isMuted, stream]);
 
   // Mic Test Logic
-  const startMicTest = useCallback(() => {
+  const startMicTest = useCallback(async () => {
     if (!stream || isTestingMic) return;
     
-    setIsTestingMic(true);
-    const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const source = context.createMediaStreamSource(stream);
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    
-    audioContextRef.current = context;
-    analyserRef.current = analyser;
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) {
+      toast({ title: "No microphone detected", variant: "destructive" });
+      return;
+    }
 
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    const updateLevel = () => {
-      analyser.getByteFrequencyData(dataArray);
-      let values = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        values += dataArray[i];
+    if (!audioTrack.enabled) {
+      toast({ title: "Mic is muted. Unmute to test.", variant: "secondary" });
+    }
+    
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const context = new AudioContextClass();
+      
+      if (context.state === 'suspended') {
+        await context.resume();
       }
-      const average = values / dataArray.length;
-      setAudioLevel(average);
-      animationFrameRef.current = requestAnimationFrame(updateLevel);
-    };
-    updateLevel();
-  }, [stream, isTestingMic]);
+
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      
+      audioContextRef.current = context;
+      analyserRef.current = analyser;
+      setIsTestingMic(true);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const updateLevel = () => {
+        if (!analyserRef.current || !audioContextRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+        
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / dataArray.length;
+        // Visual sensitivity boost
+        setAudioLevel(Math.min(100, Math.floor(average * 2.5)));
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
+      };
+      updateLevel();
+    } catch (err) {
+      console.error("Mic test error:", err);
+    }
+  }, [stream, isTestingMic, toast]);
 
   const stopMicTest = useCallback(() => {
     setIsTestingMic(false);
     setAudioLevel(0);
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    if (audioContextRef.current) audioContextRef.current.close();
+    if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
+    audioContextRef.current = null;
+    analyserRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -668,7 +694,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <video ref={videoRef} autoPlay muted playsInline className={cn("h-full w-full object-cover mirror", (isCameraOff || (pinnedId === user?.uid && !isSharingScreen)) && "hidden")} />
                 {(isCameraOff || (pinnedId === user?.uid && !isSharingScreen)) && (
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
-                    <Avatar className="h-16 w-16 border-2 border-background"><AvatarImage src={user?.photoURL || ''} /><AvatarFallback>{user?.displayName?.charAt(0)}</AvatarFallback></Avatar>
+                    <Avatar className="h-16 w-16 border-2 border-background">
+                      <AvatarImage src={user?.photoURL || ''} />
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold">{user?.displayName?.charAt(0)}</AvatarFallback>
+                    </Avatar>
                   </div>
                 )}
                 <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
@@ -684,7 +713,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/5">
                     <Avatar className="h-20 w-20 border-4 border-background">
                       <AvatarImage src={p.photoUrl} />
-                      <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold">{p.name.charAt(0)}</AvatarFallback>
                     </Avatar>
                   </div>
                   {isCreator && (
@@ -695,10 +724,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     </div>
                   )}
                   <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/40 backdrop-blur-md rounded-lg p-1">
-                    <span className="text-[10px] font-bold px-2 truncate flex items-center gap-1">
+                    <Link href={`/dashboard/profile/${p.userId}`} className="text-[10px] font-bold px-2 truncate flex items-center gap-1 hover:text-primary transition-colors">
                       {p.name}
                       {p.isMuted && <MicOff className="h-2 w-2 text-red-500" />}
-                    </span>
+                    </Link>
                     <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setPinnedId(p.userId)}><Pin className="h-3 w-3" /></Button>
                   </div>
                 </div>
@@ -720,7 +749,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <div className="flex flex-col gap-4">
                   {messages?.map((msg) => (
                     <div key={msg.id} className={cn("flex flex-col gap-1", msg.senderId === user?.uid ? "items-end" : "items-start")}>
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase">{msg.senderName}</span>
+                      <Link href={`/dashboard/profile/${msg.senderId}`} className="text-[10px] font-bold text-muted-foreground uppercase hover:text-primary transition-colors">
+                        {msg.senderName}
+                      </Link>
                       <div className={cn("px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words", msg.senderId === user?.uid ? "bg-primary text-primary-foreground" : "bg-secondary")}>{msg.text}</div>
                     </div>
                   ))}
@@ -778,19 +809,16 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <div className="space-y-4">
                     <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       <span>Microphone Level</span>
-                      <span className={cn(audioLevel > 10 ? "text-emerald-500" : "text-primary/40")}>
-                        {audioLevel > 10 ? "Active" : "Silent"}
+                      <span className={cn(audioLevel > 5 ? "text-emerald-500" : "text-primary/40")}>
+                        {audioLevel > 5 ? "Active" : "Silent"}
                       </span>
                     </div>
                     
                     <div className="h-3 w-full bg-secondary rounded-full overflow-hidden border border-white/5 relative">
                        <div 
                          className="h-full bg-gradient-to-r from-primary/50 to-primary transition-all duration-75" 
-                         style={{ width: `${Math.min(audioLevel * 1.5, 100)}%` }}
+                         style={{ width: `${audioLevel}%` }}
                        />
-                       <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-                         {[...Array(10)].map((_, i) => <div key={i} className="h-full w-px bg-white mx-auto" />)}
-                       </div>
                     </div>
 
                     <Button 
@@ -802,7 +830,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     </Button>
                     
                     <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-                      Speak into your microphone. If the bar moves, your study partners can hear you.
+                      Make sure you are unmuted. If the bar moves when you speak, your study partners can hear you.
                     </p>
                   </div>
                </Card>
