@@ -353,8 +353,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       return;
     }
 
-    if (!audioTrack.enabled) {
-      toast({ title: "Mic is muted. Unmute to test.", variant: "secondary" });
+    if (isMuted || !audioTrack.enabled) {
+      toast({ title: "Mic is muted. Unmute to see level.", variant: "secondary" });
     }
     
     try {
@@ -377,28 +377,36 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const updateLevel = () => {
         if (!analyserRef.current || !audioContextRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
         
-        let sum = 0;
+        // Using Time Domain data for more responsive volume meter (RMS)
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        
+        let sumSquares = 0;
         for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+          const val = (dataArray[i] - 128) / 128;
+          sumSquares += val * val;
         }
-        const average = sum / dataArray.length;
-        // Visual sensitivity boost
-        setAudioLevel(Math.min(100, Math.floor(average * 2.5)));
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+        
+        // Boost sensitivity for visual feedback
+        const level = Math.min(100, Math.floor(rms * 500));
+        setAudioLevel(level);
+        
         animationFrameRef.current = requestAnimationFrame(updateLevel);
       };
       updateLevel();
     } catch (err) {
       console.error("Mic test error:", err);
     }
-  }, [stream, isTestingMic, toast]);
+  }, [stream, isTestingMic, isMuted, toast]);
 
   const stopMicTest = useCallback(() => {
     setIsTestingMic(false);
     setAudioLevel(0);
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+    }
     audioContextRef.current = null;
     analyserRef.current = null;
   }, []);
@@ -809,8 +817,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                   <div className="space-y-4">
                     <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       <span>Microphone Level</span>
-                      <span className={cn(audioLevel > 5 ? "text-emerald-500" : "text-primary/40")}>
-                        {audioLevel > 5 ? "Active" : "Silent"}
+                      <span className={cn(audioLevel > 2 ? "text-emerald-500" : "text-primary/40")}>
+                        {audioLevel > 2 ? "Active" : "Silent"}
                       </span>
                     </div>
                     
@@ -830,7 +838,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                     </Button>
                     
                     <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-                      Make sure you are unmuted. If the bar moves when you speak, your study partners can hear you.
+                      Make sure you are unmuted. Speak clearly to see the volume indicator move.
                     </p>
                   </div>
                </Card>

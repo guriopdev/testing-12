@@ -49,12 +49,16 @@ export function useCollection<T = any>(
     setIsLoading(true);
     setError(null);
 
-    // Extract a usable path for debugging errors
+    // Robustly extract path for debugging
     let path = 'unknown';
-    if ('path' in memoizedTargetRefOrQuery) {
-      path = (memoizedTargetRefOrQuery as any).path;
-    } else if ((memoizedTargetRefOrQuery as any)._query?.path) {
-      path = (memoizedTargetRefOrQuery as any)._query.path.segments.join('/');
+    if (memoizedTargetRefOrQuery) {
+      if ('path' in memoizedTargetRefOrQuery) {
+        path = (memoizedTargetRefOrQuery as any).path;
+      } else if ((memoizedTargetRefOrQuery as any)._query?.path) {
+        path = (memoizedTargetRefOrQuery as any)._query.path.segments.join('/');
+      } else if ((memoizedTargetRefOrQuery as any).query?.path) {
+         path = (memoizedTargetRefOrQuery as any).query.path.segments.join('/');
+      }
     }
 
     const unsubscribe = onSnapshot(
